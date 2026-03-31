@@ -218,6 +218,9 @@ export type HookAgentDispatchPayload = Omit<HookAgentPayload, "sessionKey"> & {
   sessionKey: string;
   allowUnsafeExternalContent?: boolean;
   externalContentSource?: HookExternalContentSource;
+  purpose?: "mission-wake";
+  missionIds?: string[];
+  suppressUndeliveredEnqueue?: boolean;
 };
 
 const listHookChannelValues = () => ["last", ...listChannelPlugins().map((plugin) => plugin.id)];
