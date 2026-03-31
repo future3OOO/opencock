@@ -239,6 +239,37 @@ Why this fork-only:
 - the live system still depended on workspace Python to reconcile missing child sessions and to build one of the key continuity fields used by the direct-session orchestration layer
 - this slice moves those generic engine responsibilities into maintained fork source and shrinks the remaining Python layer toward policy/compatibility only
 
+#### Native orchestration bridge CLI slice
+
+Added a source-owned compatibility bridge so legacy JSON-over-stdin callers can hit the native OpenCock orchestration runtime instead of reimplementing generic lifecycle logic in workspace Python.
+
+- Added source-owned bridge command dispatch in:
+  - `src/orchestration/bridge.ts`
+- Extended the CLI registration layer in:
+  - `src/cli/program/register.orchestrator.ts`
+  - `src/cli/program/register.orchestrator.test.ts`
+
+Behavior change:
+
+- `openclaw orchestrator bridge` now accepts the legacy bridge actions:
+  - `prepare`
+  - `delegate`
+  - `commit`
+  - `complete`
+  - `heartbeat`
+  - `status`
+  - `query-status`
+  - `list`
+  - `cancel`
+- those bridge actions speak JSON-over-stdin or `--payload-json` / `--payload-file`
+- the bridge delegates directly into the native orchestration control-plane and service modules
+- this creates the runtime-owned seam that lets `dispatch_bridge.py` shrink into a compatibility subprocess shim instead of remaining generic engine authority
+
+Why this fork-only:
+
+- the live system still relies on a workspace Python bridge shape, but the generic lifecycle behind that shape now belongs in the OpenCock runtime
+- this slice moves the live compatibility seam into maintained fork source so the remaining Python layer can become a thin adapter
+
 #### Validation
 
 - Focused tests:

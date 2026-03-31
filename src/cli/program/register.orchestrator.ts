@@ -1,6 +1,10 @@
 import fs from "node:fs";
 import type { Command } from "commander";
 import {
+  ORCHESTRATION_BRIDGE_COMMANDS,
+  runOrchestrationBridgeCommand,
+} from "../../orchestration/bridge.js";
+import {
   commitDelegatedWorkerFromSession,
   completeMissionFromSession,
   delegateExplicitRequestFromSession,
@@ -62,6 +66,48 @@ function resolveToolNeeds(opts: { toolNeed?: string[] }): string[] | undefined {
     ? opts.toolNeed.map((item) => item.trim()).filter(Boolean)
     : [];
   return toolNeeds.length > 0 ? toolNeeds : undefined;
+}
+
+function resolveBridgePayload(opts: { payloadJson?: string; payloadFile?: string }) {
+  if (opts.payloadJson && opts.payloadFile) {
+    throw new Error("Pass --payload-json or --payload-file, not both.");
+  }
+  const raw = opts.payloadFile
+    ? fs.readFileSync(opts.payloadFile, "utf8")
+    : (opts.payloadJson ?? fs.readFileSync(0, "utf8"));
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return {};
+  }
+  const parsed = JSON.parse(trimmed);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Bridge payload must be a JSON object.");
+  }
+  return parsed as Record<string, unknown>;
+}
+
+function registerBridgeCommand(orch: Command) {
+  const bridge = orch
+    .command("bridge")
+    .description("Compatibility bridge for legacy orchestration JSON-over-stdin callers");
+
+  for (const bridgeCommand of ORCHESTRATION_BRIDGE_COMMANDS) {
+    bridge
+      .command(bridgeCommand)
+      .description(`Run the native orchestration bridge action: ${bridgeCommand}`)
+      .option("--payload-json <json>", "Bridge payload JSON")
+      .option("--payload-file <path>", "Read bridge payload JSON from file")
+      .option("--json", "Output JSON", true)
+      .action(async (opts) => {
+        try {
+          const payload = resolveBridgePayload(opts);
+          output(await runOrchestrationBridgeCommand(bridgeCommand, payload));
+        } catch (error) {
+          output(errorPayload((error as Error).message, "bridge_error"));
+          process.exitCode = 1;
+        }
+      });
+  }
 }
 
 export function registerOrchestratorCommand(program: Command) {
@@ -510,4 +556,6 @@ export function registerOrchestratorCommand(program: Command) {
         }),
       );
     });
+
+  registerBridgeCommand(orch);
 }
