@@ -572,6 +572,12 @@ export function replaceSubagentRunAfterSteer(params: {
 
 export function registerSubagentRun(params: {
   runId: string;
+  sourceId?: string;
+  orchestrationWorkerId?: string;
+  orchestrationRoutingClass?: string;
+  orchestrationSurface?: string;
+  orchestrationStatusSummary?: string;
+  orchestrationSuppressionKey?: string;
   childSessionKey: string;
   controllerSessionKey?: string;
   requesterSessionKey: string;

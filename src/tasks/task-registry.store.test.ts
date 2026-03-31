@@ -158,6 +158,36 @@ describe("task-registry store runtime", () => {
     });
   });
 
+  it("persists orchestration suppression metadata on task records", () => {
+    const created = createTaskRecord({
+      runtime: "subagent",
+      requesterSessionKey: "agent:main:main",
+      sourceId: "mission-789",
+      orchestrationWorkerId: "worker-789",
+      orchestrationRoutingClass: "coding",
+      orchestrationSurface: "whatsapp",
+      orchestrationStatusSummary: "porting orchestration authority",
+      orchestrationSuppressionKey: "suppression-789",
+      childSessionKey: "agent:main:subagent:worker-789",
+      runId: "run-orchestration",
+      task: "Migrate mission router authority",
+      status: "running",
+      deliveryStatus: "pending",
+    });
+
+    resetTaskRegistryForTests({ persist: false });
+
+    expect(findTaskByRunId("run-orchestration")).toMatchObject({
+      taskId: created.taskId,
+      sourceId: "mission-789",
+      orchestrationWorkerId: "worker-789",
+      orchestrationRoutingClass: "coding",
+      orchestrationSurface: "whatsapp",
+      orchestrationStatusSummary: "porting orchestration authority",
+      orchestrationSuppressionKey: "suppression-789",
+    });
+  });
+
   it("hardens the sqlite task store directory and file modes", () => {
     if (process.platform === "win32") {
       return;

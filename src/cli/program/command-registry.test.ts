@@ -11,6 +11,13 @@ vi.mock("./register.agent.js", () => ({
   },
 }));
 
+vi.mock("./register.orchestrator.js", () => ({
+  registerOrchestratorCommand: (program: Command) => {
+    const orch = program.command("orchestrator");
+    orch.command("delegate");
+  },
+}));
+
 vi.mock("./register.backup.js", () => ({
   registerBackupCommand: (program: Command) => {
     const backup = program.command("backup");
@@ -69,12 +76,14 @@ describe("command-registry", () => {
     const names = getCoreCliCommandNames();
     expect(names).toContain("agent");
     expect(names).toContain("agents");
+    expect(names).toContain("orchestrator");
   });
 
   it("returns only commands that support subcommands", () => {
     const names = getCoreCliCommandsWithSubcommands();
     expect(names).toContain("config");
     expect(names).toContain("agents");
+    expect(names).toContain("orchestrator");
     expect(names).toContain("backup");
     expect(names).toContain("sessions");
     expect(names).toContain("tasks");

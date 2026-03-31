@@ -12,6 +12,7 @@ import {
 } from "../config/sessions.js";
 import { createInternalHookEvent, triggerInternalHook } from "../hooks/internal-hooks.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
+import { clearSessionMissionBindingIfMatches } from "../orchestration/session-state.js";
 import { parseAgentSessionKey } from "../routing/session-key.js";
 import type { TaskRegistryHookEvent, TaskRegistryHooks } from "./task-registry.store.js";
 import type { TaskDeliveryStatus, TaskRecord, TaskStatus } from "./task-registry.types.js";
@@ -59,7 +60,12 @@ function resolveMissionId(task: TaskRecord): string {
 }
 
 function resolveWorkerId(task: TaskRecord): string {
-  return task.childSessionKey?.trim() || task.runId?.trim() || task.taskId;
+  return (
+    task.orchestrationWorkerId?.trim() ||
+    task.childSessionKey?.trim() ||
+    task.runId?.trim() ||
+    task.taskId
+  );
 }
 
 function resolveMissionFinalState(task: TaskRecord): string {
@@ -156,7 +162,7 @@ function appendMissionEventHistory(
       ),
   );
   return [nextEvent, ...filtered]
-    .sort((left, right) => (right.deliveredAt ?? 0) - (left.deliveredAt ?? 0))
+    .toSorted((left, right) => (right.deliveredAt ?? 0) - (left.deliveredAt ?? 0))
     .slice(0, MAX_MISSION_EVENT_HISTORY);
 }
 
@@ -242,7 +248,9 @@ async function emitMissionCompletedHook(task: TaskRecord): Promise<void> {
     deliveryState: task.deliveryStatus,
     eventText: buildMissionSystemEventText(task),
   };
-  await triggerInternalHook(createInternalHookEvent("agent", "mission:completed", sessionKey, context));
+  await triggerInternalHook(
+    createInternalHookEvent("agent", "mission:completed", sessionKey, context),
+  );
 }
 
 async function handleTaskRegistryEvent(event: TaskRegistryHookEvent): Promise<void> {
@@ -253,6 +261,11 @@ async function handleTaskRegistryEvent(event: TaskRegistryHookEvent): Promise<vo
     return;
   }
   try {
+    await clearSessionMissionBindingIfMatches({
+      sessionKey: event.task.requesterSessionKey,
+      missionId: resolveMissionId(event.task),
+      workerId: resolveWorkerId(event.task),
+    });
     await persistMissionCompletionProjection(event.task);
     await emitMissionCompletedHook(event.task);
   } catch (error) {
@@ -277,7 +290,7 @@ export function readPendingMissionNotificationRecords(
 ): PendingMissionNotification[] {
   return Object.values(readPendingMissionMap(entry))
     .filter((record) => Boolean(record?.missionId))
-    .sort((left, right) => (left.deliveredAtMs ?? 0) - (right.deliveredAtMs ?? 0));
+    .toSorted((left, right) => (left.deliveredAtMs ?? 0) - (right.deliveredAtMs ?? 0));
 }
 
 export async function clearPendingMissionNotifications(
@@ -367,7 +380,8 @@ export async function pruneExpiredPendingMissionNotifications(sessionKey: string
     update: async (existing) => {
       const pending = readPendingMissionMap(existing);
       const liveEntries = Object.entries(pending).filter(
-        ([, record]) => (record.expiresAtMs ?? 0) > now && (record.attempts ?? 0) < MISSION_WAKE_MAX_ATTEMPTS,
+        ([, record]) =>
+          (record.expiresAtMs ?? 0) > now && (record.attempts ?? 0) < MISSION_WAKE_MAX_ATTEMPTS,
       );
       if (liveEntries.length === Object.keys(pending).length) {
         return null;
@@ -404,11 +418,9 @@ export function isTransientMissionWakeFailure(value: unknown): boolean {
     typeof value === "string"
       ? value
       : typeof value === "object" && value
-        ? (
-            (value as { error?: string }).error?.trim() ||
-            (value as { summary?: string }).summary?.trim() ||
-            ""
-          )
+        ? (value as { error?: string }).error?.trim() ||
+          (value as { summary?: string }).summary?.trim() ||
+          ""
         : "";
   return /busy|queue|timeout|temporar|requests-in-flight|rate limit|locked/i.test(text);
 }

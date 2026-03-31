@@ -10,6 +10,11 @@ type TaskRegistryRow = {
   task_id: string;
   runtime: TaskRecord["runtime"];
   source_id: string | null;
+  orchestration_worker_id: string | null;
+  orchestration_routing_class: string | null;
+  orchestration_surface: string | null;
+  orchestration_status_summary: string | null;
+  orchestration_suppression_key: string | null;
   requester_session_key: string;
   parent_flow_id: string | null;
   child_session_key: string | null;
@@ -91,6 +96,17 @@ function rowToTaskRecord(row: TaskRegistryRow): TaskRecord {
     taskId: row.task_id,
     runtime: row.runtime,
     ...(row.source_id ? { sourceId: row.source_id } : {}),
+    ...(row.orchestration_worker_id ? { orchestrationWorkerId: row.orchestration_worker_id } : {}),
+    ...(row.orchestration_routing_class
+      ? { orchestrationRoutingClass: row.orchestration_routing_class }
+      : {}),
+    ...(row.orchestration_surface ? { orchestrationSurface: row.orchestration_surface } : {}),
+    ...(row.orchestration_status_summary
+      ? { orchestrationStatusSummary: row.orchestration_status_summary }
+      : {}),
+    ...(row.orchestration_suppression_key
+      ? { orchestrationSuppressionKey: row.orchestration_suppression_key }
+      : {}),
     requesterSessionKey: row.requester_session_key,
     ...(row.parent_flow_id ? { parentFlowId: row.parent_flow_id } : {}),
     ...(row.child_session_key ? { childSessionKey: row.child_session_key } : {}),
@@ -129,6 +145,11 @@ function bindTaskRecord(record: TaskRecord) {
     task_id: record.taskId,
     runtime: record.runtime,
     source_id: record.sourceId ?? null,
+    orchestration_worker_id: record.orchestrationWorkerId ?? null,
+    orchestration_routing_class: record.orchestrationRoutingClass ?? null,
+    orchestration_surface: record.orchestrationSurface ?? null,
+    orchestration_status_summary: record.orchestrationStatusSummary ?? null,
+    orchestration_suppression_key: record.orchestrationSuppressionKey ?? null,
     requester_session_key: record.requesterSessionKey,
     parent_flow_id: record.parentFlowId ?? null,
     child_session_key: record.childSessionKey ?? null,
@@ -167,6 +188,11 @@ function createStatements(db: DatabaseSync): TaskRegistryStatements {
         task_id,
         runtime,
         source_id,
+        orchestration_worker_id,
+        orchestration_routing_class,
+        orchestration_surface,
+        orchestration_status_summary,
+        orchestration_suppression_key,
         requester_session_key,
         parent_flow_id,
         child_session_key,
@@ -203,6 +229,11 @@ function createStatements(db: DatabaseSync): TaskRegistryStatements {
         task_id,
         runtime,
         source_id,
+        orchestration_worker_id,
+        orchestration_routing_class,
+        orchestration_surface,
+        orchestration_status_summary,
+        orchestration_suppression_key,
         requester_session_key,
         parent_flow_id,
         child_session_key,
@@ -227,6 +258,11 @@ function createStatements(db: DatabaseSync): TaskRegistryStatements {
         @task_id,
         @runtime,
         @source_id,
+        @orchestration_worker_id,
+        @orchestration_routing_class,
+        @orchestration_surface,
+        @orchestration_status_summary,
+        @orchestration_suppression_key,
         @requester_session_key,
         @parent_flow_id,
         @child_session_key,
@@ -251,6 +287,11 @@ function createStatements(db: DatabaseSync): TaskRegistryStatements {
       ON CONFLICT(task_id) DO UPDATE SET
         runtime = excluded.runtime,
         source_id = excluded.source_id,
+        orchestration_worker_id = excluded.orchestration_worker_id,
+        orchestration_routing_class = excluded.orchestration_routing_class,
+        orchestration_surface = excluded.orchestration_surface,
+        orchestration_status_summary = excluded.orchestration_status_summary,
+        orchestration_suppression_key = excluded.orchestration_suppression_key,
         requester_session_key = excluded.requester_session_key,
         parent_flow_id = excluded.parent_flow_id,
         child_session_key = excluded.child_session_key,
@@ -296,6 +337,11 @@ function ensureSchema(db: DatabaseSync) {
       task_id TEXT PRIMARY KEY,
       runtime TEXT NOT NULL,
       source_id TEXT,
+      orchestration_worker_id TEXT,
+      orchestration_routing_class TEXT,
+      orchestration_surface TEXT,
+      orchestration_status_summary TEXT,
+      orchestration_suppression_key TEXT,
       requester_session_key TEXT NOT NULL,
       parent_flow_id TEXT,
       child_session_key TEXT,
@@ -326,12 +372,21 @@ function ensureSchema(db: DatabaseSync) {
     );
   `);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_task_runs_run_id ON task_runs(run_id);`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_task_runs_source_id ON task_runs(source_id);`);
   ensureColumn(db, "task_runs", "parent_flow_id", "TEXT");
+  ensureColumn(db, "task_runs", "orchestration_worker_id", "TEXT");
+  ensureColumn(db, "task_runs", "orchestration_routing_class", "TEXT");
+  ensureColumn(db, "task_runs", "orchestration_surface", "TEXT");
+  ensureColumn(db, "task_runs", "orchestration_status_summary", "TEXT");
+  ensureColumn(db, "task_runs", "orchestration_suppression_key", "TEXT");
   db.exec(`CREATE INDEX IF NOT EXISTS idx_task_runs_status ON task_runs(status);`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_task_runs_runtime_status ON task_runs(runtime, status);`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_task_runs_cleanup_after ON task_runs(cleanup_after);`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_task_runs_last_event_at ON task_runs(last_event_at);`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_task_runs_parent_flow_id ON task_runs(parent_flow_id);`);
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_task_runs_orchestration_suppression_key ON task_runs(orchestration_suppression_key);`,
+  );
   db.exec(
     `CREATE INDEX IF NOT EXISTS idx_task_runs_child_session_key ON task_runs(child_session_key);`,
   );

@@ -262,6 +262,12 @@ export function createSubagentRunManager(params: {
 
   const registerSubagentRun = (registerParams: {
     runId: string;
+    sourceId?: string;
+    orchestrationWorkerId?: string;
+    orchestrationRoutingClass?: string;
+    orchestrationSurface?: string;
+    orchestrationStatusSummary?: string;
+    orchestrationSuppressionKey?: string;
     childSessionKey: string;
     controllerSessionKey?: string;
     requesterSessionKey: string;
@@ -322,7 +328,12 @@ export function createSubagentRunManager(params: {
     try {
       createRunningTaskRun({
         runtime: "subagent",
-        sourceId: registerParams.runId,
+        sourceId: registerParams.sourceId?.trim() || registerParams.runId,
+        orchestrationWorkerId: registerParams.orchestrationWorkerId,
+        orchestrationRoutingClass: registerParams.orchestrationRoutingClass,
+        orchestrationSurface: registerParams.orchestrationSurface,
+        orchestrationStatusSummary: registerParams.orchestrationStatusSummary,
+        orchestrationSuppressionKey: registerParams.orchestrationSuppressionKey,
         requesterSessionKey: registerParams.requesterSessionKey,
         requesterOrigin,
         childSessionKey: registerParams.childSessionKey,

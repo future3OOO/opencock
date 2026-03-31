@@ -46,6 +46,8 @@ const DEFAULT_TASK_RETENTION_MS = 7 * 24 * 60 * 60_000;
 const tasks = new Map<string, TaskRecord>();
 const taskDeliveryStates = new Map<string, TaskDeliveryState>();
 const taskIdsByRunId = new Map<string, Set<string>>();
+const taskIdsBySourceId = new Map<string, Set<string>>();
+const taskIdsByOrchestrationSuppressionKey = new Map<string, Set<string>>();
 const taskIdsBySessionKey = new Map<string, Set<string>>();
 const tasksWithPendingDelivery = new Set<string>();
 let listenerStarted = false;
@@ -281,6 +283,76 @@ function rebuildRunIdIndex() {
   }
 }
 
+function addSourceIdIndex(taskId: string, sourceId?: string) {
+  const trimmed = sourceId?.trim();
+  if (!trimmed) {
+    return;
+  }
+  let ids = taskIdsBySourceId.get(trimmed);
+  if (!ids) {
+    ids = new Set<string>();
+    taskIdsBySourceId.set(trimmed, ids);
+  }
+  ids.add(taskId);
+}
+
+function deleteSourceIdIndex(taskId: string, sourceId?: string) {
+  const trimmed = sourceId?.trim();
+  if (!trimmed) {
+    return;
+  }
+  const ids = taskIdsBySourceId.get(trimmed);
+  if (!ids) {
+    return;
+  }
+  ids.delete(taskId);
+  if (ids.size === 0) {
+    taskIdsBySourceId.delete(trimmed);
+  }
+}
+
+function rebuildSourceIdIndex() {
+  taskIdsBySourceId.clear();
+  for (const [taskId, task] of tasks.entries()) {
+    addSourceIdIndex(taskId, task.sourceId);
+  }
+}
+
+function addOrchestrationSuppressionKeyIndex(taskId: string, suppressionKey?: string) {
+  const trimmed = suppressionKey?.trim();
+  if (!trimmed) {
+    return;
+  }
+  let ids = taskIdsByOrchestrationSuppressionKey.get(trimmed);
+  if (!ids) {
+    ids = new Set<string>();
+    taskIdsByOrchestrationSuppressionKey.set(trimmed, ids);
+  }
+  ids.add(taskId);
+}
+
+function deleteOrchestrationSuppressionKeyIndex(taskId: string, suppressionKey?: string) {
+  const trimmed = suppressionKey?.trim();
+  if (!trimmed) {
+    return;
+  }
+  const ids = taskIdsByOrchestrationSuppressionKey.get(trimmed);
+  if (!ids) {
+    return;
+  }
+  ids.delete(taskId);
+  if (ids.size === 0) {
+    taskIdsByOrchestrationSuppressionKey.delete(trimmed);
+  }
+}
+
+function rebuildOrchestrationSuppressionKeyIndex() {
+  taskIdsByOrchestrationSuppressionKey.clear();
+  for (const [taskId, task] of tasks.entries()) {
+    addOrchestrationSuppressionKeyIndex(taskId, task.orchestrationSuppressionKey);
+  }
+}
+
 function rebuildSessionKeyIndex() {
   taskIdsBySessionKey.clear();
   for (const [taskId, task] of tasks.entries()) {
@@ -290,6 +362,26 @@ function rebuildSessionKeyIndex() {
 
 function getTasksByRunId(runId: string): TaskRecord[] {
   const ids = taskIdsByRunId.get(runId.trim());
+  if (!ids || ids.size === 0) {
+    return [];
+  }
+  return [...ids]
+    .map((taskId) => tasks.get(taskId))
+    .filter((task): task is TaskRecord => Boolean(task));
+}
+
+function getTasksBySourceId(sourceId: string): TaskRecord[] {
+  const ids = taskIdsBySourceId.get(sourceId.trim());
+  if (!ids || ids.size === 0) {
+    return [];
+  }
+  return [...ids]
+    .map((taskId) => tasks.get(taskId))
+    .filter((task): task is TaskRecord => Boolean(task));
+}
+
+function getTasksByOrchestrationSuppressionKey(suppressionKey: string): TaskRecord[] {
+  const ids = taskIdsByOrchestrationSuppressionKey.get(suppressionKey.trim());
   if (!ids || ids.size === 0) {
     return [];
   }
@@ -374,6 +466,11 @@ function mergeExistingTaskForCreate(
   params: {
     requesterOrigin?: TaskDeliveryState["requesterOrigin"];
     sourceId?: string;
+    orchestrationWorkerId?: string;
+    orchestrationRoutingClass?: string;
+    orchestrationSurface?: string;
+    orchestrationStatusSummary?: string;
+    orchestrationSuppressionKey?: string;
     parentFlowId?: string;
     parentTaskId?: string;
     agentId?: string;
@@ -396,6 +493,21 @@ function mergeExistingTaskForCreate(
   }
   if (params.sourceId?.trim() && !existing.sourceId?.trim()) {
     patch.sourceId = params.sourceId.trim();
+  }
+  if (params.orchestrationWorkerId?.trim() && !existing.orchestrationWorkerId?.trim()) {
+    patch.orchestrationWorkerId = params.orchestrationWorkerId.trim();
+  }
+  if (params.orchestrationRoutingClass?.trim() && !existing.orchestrationRoutingClass?.trim()) {
+    patch.orchestrationRoutingClass = params.orchestrationRoutingClass.trim();
+  }
+  if (params.orchestrationSurface?.trim() && !existing.orchestrationSurface?.trim()) {
+    patch.orchestrationSurface = params.orchestrationSurface.trim();
+  }
+  if (params.orchestrationStatusSummary?.trim() && !existing.orchestrationStatusSummary?.trim()) {
+    patch.orchestrationStatusSummary = params.orchestrationStatusSummary.trim();
+  }
+  if (params.orchestrationSuppressionKey?.trim() && !existing.orchestrationSuppressionKey?.trim()) {
+    patch.orchestrationSuppressionKey = params.orchestrationSuppressionKey.trim();
   }
   if (params.parentFlowId?.trim() && !existing.parentFlowId?.trim()) {
     patch.parentFlowId = params.parentFlowId.trim();
@@ -490,6 +602,8 @@ function restoreTaskRegistryOnce() {
       taskDeliveryStates.set(taskId, state);
     }
     rebuildRunIdIndex();
+    rebuildSourceIdIndex();
+    rebuildOrchestrationSuppressionKeyIndex();
     rebuildSessionKeyIndex();
     emitTaskRegistryHookEvent(() => ({
       kind: "restored",
@@ -523,6 +637,17 @@ function updateTask(taskId: string, patch: Partial<TaskRecord>): TaskRecord | nu
   tasks.set(taskId, next);
   if (patch.runId && patch.runId !== current.runId) {
     rebuildRunIdIndex();
+  }
+  if (patch.sourceId && patch.sourceId !== current.sourceId) {
+    deleteSourceIdIndex(taskId, current.sourceId);
+    addSourceIdIndex(taskId, next.sourceId);
+  }
+  if (
+    patch.orchestrationSuppressionKey &&
+    patch.orchestrationSuppressionKey !== current.orchestrationSuppressionKey
+  ) {
+    deleteOrchestrationSuppressionKeyIndex(taskId, current.orchestrationSuppressionKey);
+    addOrchestrationSuppressionKeyIndex(taskId, next.orchestrationSuppressionKey);
   }
   if (sessionIndexChanged) {
     deleteSessionKeyIndex(taskId, current);
@@ -971,6 +1096,11 @@ function ensureListener() {
 export function createTaskRecord(params: {
   runtime: TaskRuntime;
   sourceId?: string;
+  orchestrationWorkerId?: string;
+  orchestrationRoutingClass?: string;
+  orchestrationSurface?: string;
+  orchestrationStatusSummary?: string;
+  orchestrationSuppressionKey?: string;
   requesterSessionKey: string;
   requesterOrigin?: TaskDeliveryState["requesterOrigin"];
   parentFlowId?: string;
@@ -1010,6 +1140,11 @@ export function createTaskRecord(params: {
     taskId,
     runtime: params.runtime,
     sourceId: params.sourceId?.trim() || undefined,
+    orchestrationWorkerId: params.orchestrationWorkerId?.trim() || undefined,
+    orchestrationRoutingClass: params.orchestrationRoutingClass?.trim() || undefined,
+    orchestrationSurface: params.orchestrationSurface?.trim() || undefined,
+    orchestrationStatusSummary: normalizeTaskSummary(params.orchestrationStatusSummary),
+    orchestrationSuppressionKey: params.orchestrationSuppressionKey?.trim() || undefined,
     requesterSessionKey: params.requesterSessionKey,
     parentFlowId: params.parentFlowId?.trim() || undefined,
     childSessionKey: params.childSessionKey,
@@ -1042,6 +1177,8 @@ export function createTaskRecord(params: {
     requesterOrigin: normalizeDeliveryContext(params.requesterOrigin),
   });
   addRunIdIndex(taskId, record.runId);
+  addSourceIdIndex(taskId, record.sourceId);
+  addOrchestrationSuppressionKeyIndex(taskId, record.orchestrationSuppressionKey);
   addSessionKeyIndex(taskId, record);
   persistTaskUpsert(record);
   emitTaskRegistryHookEvent(() => ({
@@ -1351,6 +1488,12 @@ export function findTaskByRunId(runId: string): TaskRecord | undefined {
   return task ? cloneTaskRecord(task) : undefined;
 }
 
+export function findTaskBySourceId(sourceId: string): TaskRecord | undefined {
+  ensureTaskRegistryReady();
+  const task = pickPreferredRunIdTask(getTasksBySourceId(sourceId));
+  return task ? cloneTaskRecord(task) : undefined;
+}
+
 export function findLatestTaskForSessionKey(sessionKey: string): TaskRecord | undefined {
   const task = listTasksForSessionKey(sessionKey)[0];
   return task ? cloneTaskRecord(task) : undefined;
@@ -1382,12 +1525,33 @@ export function listTasksForSessionKey(sessionKey: string): TaskRecord[] {
     .map(({ insertionIndex: _, ...task }) => task);
 }
 
+export function listTasksForSourceId(sourceId: string): TaskRecord[] {
+  ensureTaskRegistryReady();
+  return getTasksBySourceId(sourceId)
+    .map((task, insertionIndex) => ({ ...cloneTaskRecord(task), insertionIndex }))
+    .toSorted(compareTasksNewestFirst)
+    .map(({ insertionIndex: _, ...task }) => task);
+}
+
+export function listTasksForOrchestrationSuppressionKey(suppressionKey: string): TaskRecord[] {
+  ensureTaskRegistryReady();
+  return getTasksByOrchestrationSuppressionKey(suppressionKey)
+    .map((task, insertionIndex) => ({ ...cloneTaskRecord(task), insertionIndex }))
+    .toSorted(compareTasksNewestFirst)
+    .map(({ insertionIndex: _, ...task }) => task);
+}
+
 export function resolveTaskForLookupToken(token: string): TaskRecord | undefined {
   const lookup = token.trim();
   if (!lookup) {
     return undefined;
   }
-  return getTaskById(lookup) ?? findTaskByRunId(lookup) ?? findLatestTaskForSessionKey(lookup);
+  return (
+    getTaskById(lookup) ??
+    findTaskByRunId(lookup) ??
+    findTaskBySourceId(lookup) ??
+    findLatestTaskForSessionKey(lookup)
+  );
 }
 
 export function deleteTaskRecordById(taskId: string): boolean {
@@ -1400,6 +1564,8 @@ export function deleteTaskRecordById(taskId: string): boolean {
   tasks.delete(taskId);
   taskDeliveryStates.delete(taskId);
   rebuildRunIdIndex();
+  deleteSourceIdIndex(taskId, current.sourceId);
+  deleteOrchestrationSuppressionKeyIndex(taskId, current.orchestrationSuppressionKey);
   persistTaskDelete(taskId);
   persistTaskDeliveryStateDelete(taskId);
   emitTaskRegistryHookEvent(() => ({
@@ -1414,6 +1580,8 @@ export function resetTaskRegistryForTests(opts?: { persist?: boolean }) {
   tasks.clear();
   taskDeliveryStates.clear();
   taskIdsByRunId.clear();
+  taskIdsBySourceId.clear();
+  taskIdsByOrchestrationSuppressionKey.clear();
   taskIdsBySessionKey.clear();
   tasksWithPendingDelivery.clear();
   restoreAttempted = false;

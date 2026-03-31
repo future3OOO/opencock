@@ -53,6 +53,11 @@ export type TaskRecord = {
   taskId: string;
   runtime: TaskRuntime;
   sourceId?: string;
+  orchestrationWorkerId?: string;
+  orchestrationRoutingClass?: string;
+  orchestrationSurface?: string;
+  orchestrationStatusSummary?: string;
+  orchestrationSuppressionKey?: string;
   requesterSessionKey: string;
   parentFlowId?: string;
   childSessionKey?: string;
