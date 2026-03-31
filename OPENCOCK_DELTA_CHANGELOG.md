@@ -47,6 +47,45 @@ git diff --stat upstream/main...HEAD
 
 ## Entries
 
+### 2026-04-01
+
+#### Source-owned orchestration runtime config and continuity freshness slice
+
+Promoted the remaining generic orchestration config/defaults and direct-session continuity thresholds out of workspace Python and into OpenCock source.
+
+- Added source-owned orchestration runtime config in:
+  - `src/orchestration/runtime-config.ts`
+  - `src/orchestration/runtime-config.test.ts`
+- Threaded the source-owned config into the native control plane in:
+  - `src/orchestration/control-plane.prepare.ts`
+  - `src/orchestration/control-plane.shared.ts`
+  - `src/orchestration/control-plane.lifecycle.ts`
+  - `src/orchestration/service.ts`
+- Extended runtime session schema and coverage in:
+  - `src/config/sessions/types.ts`
+  - `src/orchestration/control-plane.test.ts`
+  - `src/orchestration/service.test.ts`
+
+Behavior change:
+
+- native orchestration now owns the default config for:
+  - enabled channels
+  - direct-session orchestrator mode
+  - spawn-suppression cooldown
+  - direct-session continuity thresholds
+  - cleanup / heartbeat / retry defaults
+- source runtime now reads the legacy workspace `skills/clawbot-autoresearch/runtime.json` only as a temporary compatibility overlay instead of leaving those defaults authoritative in Python
+- `prepare` now evaluates direct-session continuity freshness in source and resets stale continuity state without relying on `mission_router.py`
+- `delegate`, `delegate-explicit`, and `commit` suppression now use the source-owned cooldown config instead of a hardcoded Python default
+- session records now carry explicit continuity freshness reset metadata:
+  - `freshnessResetAt`
+  - `freshnessResetReasons`
+
+Why this fork-only:
+
+- the live system’s orchestration enablement and direct-session freshness policy were still trapped in workspace Python under `mission_router.py` / `common.py`
+- this slice keeps the compatibility overlay for now, but moves the engine-owned defaults and reset behavior into maintained fork source
+
 ### 2026-03-31
 
 #### Source-owned orchestration command and session lifecycle slice

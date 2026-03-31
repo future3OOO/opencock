@@ -14,6 +14,12 @@ import {
   shouldDelegateRoutingClass,
 } from "./policy.js";
 import {
+  evaluateOrchestratorContinuityFreshness,
+  isOrchestrationChannelEnabled,
+  loadOrchestrationRuntimeConfig,
+  resetOrchestratorContinuityState,
+} from "./runtime-config.js";
+import {
   buildOrchestrationMissionStatus,
   isDirectOrchestratorSessionKey,
   isGroupOrchestratorSession,
@@ -47,6 +53,7 @@ export async function prepareDispatchRequestFromSession(params: {
   const loaded = loadSessionEntry(sessionKey);
   const canonicalSessionKey = loaded.canonicalKey;
   const cfg = loadConfig();
+  const orchestrationConfig = loadOrchestrationRuntimeConfig(cfg);
   const freshness = evaluateSessionFreshness({
     updatedAt: loaded.entry?.updatedAt ?? 0,
     now: Date.now(),
@@ -64,13 +71,26 @@ export async function prepareDispatchRequestFromSession(params: {
   });
   if (
     isGroupOrchestratorSession(canonicalSessionKey) ||
-    !isDirectOrchestratorSessionKey(canonicalSessionKey)
+    !isDirectOrchestratorSessionKey(canonicalSessionKey) ||
+    !orchestrationConfig.directSessionsAreOrchestrators ||
+    !isOrchestrationChannelEnabled(canonicalSessionKey, orchestrationConfig)
   ) {
     return {
       action: "inline" as const,
       routingClass,
       freshness,
     };
+  }
+  const orchestratorFreshness = evaluateOrchestratorContinuityFreshness({
+    entry: loaded.entry,
+    config: orchestrationConfig,
+  });
+  if (orchestratorFreshness.needsRotation) {
+    await resetOrchestratorContinuityState({
+      storePath: loaded.storePath,
+      sessionKey: canonicalSessionKey,
+      reasons: orchestratorFreshness.reasons,
+    });
   }
   const binding = readSessionMissionBinding(loaded.entry);
   const continuation = resolveContinuationIntent({
@@ -90,6 +110,7 @@ export async function prepareDispatchRequestFromSession(params: {
           ? buildOrchestrationMissionStatus(task).replyText
           : `Mission ${continuation.missionId} has no live worker bound.`,
       freshness,
+      orchestratorFreshness,
     };
   }
   if (routingClass === "direct-answer" || !params.allowAutoDelegate) {
@@ -97,6 +118,7 @@ export async function prepareDispatchRequestFromSession(params: {
       action: "inline" as const,
       routingClass,
       freshness,
+      orchestratorFreshness,
     };
   }
   if (
@@ -113,6 +135,7 @@ export async function prepareDispatchRequestFromSession(params: {
       action: "inline" as const,
       routingClass,
       freshness,
+      orchestratorFreshness,
     };
   }
   return {
@@ -123,8 +146,10 @@ export async function prepareDispatchRequestFromSession(params: {
       statusSummary: compactText(text, 120) ?? text,
       surface: resolveSpawnSurface(params.surface, canonicalSessionKey),
       toolNeeds: params.toolNeeds,
+      config: orchestrationConfig,
     }),
     freshness,
+    orchestratorFreshness,
   };
 }
 
@@ -162,8 +187,12 @@ export async function delegateExplicitRequestFromSession(params: {
   }
   const loaded = loadSessionEntry(sessionKey);
   const canonicalSessionKey = loaded.canonicalKey;
+  const orchestrationConfig = loadOrchestrationRuntimeConfig();
   if (isGroupOrchestratorSession(canonicalSessionKey)) {
     return delegateRejected("Group sessions stay inline.");
+  }
+  if (!isOrchestrationChannelEnabled(canonicalSessionKey, orchestrationConfig)) {
+    return delegateRejected("Orchestration is disabled for this session.");
   }
   return buildPreparedDelegatePlan({
     sessionKey: canonicalSessionKey,
@@ -173,5 +202,6 @@ export async function delegateExplicitRequestFromSession(params: {
     surface: resolveSpawnSurface(params.surface, canonicalSessionKey),
     toolNeeds: params.toolNeeds,
     timeoutSeconds: params.timeoutSeconds,
+    config: orchestrationConfig,
   });
 }

@@ -231,6 +231,8 @@ export type SessionEntry = {
   continuitySummary?: string | null;
   continuityUpdatedAt?: number;
   continuityCapsule?: SessionContinuityCapsule | null;
+  freshnessResetAt?: number;
+  freshnessResetReasons?: string[] | null;
   workerNoticeCount?: number;
   activeMissionId?: string | null;
   focusedWorkerId?: string | null;

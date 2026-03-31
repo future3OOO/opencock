@@ -19,11 +19,11 @@ import {
   isDelegatableRoutingClass,
   normalizeOptionalText,
 } from "./format.js";
+import { isOrchestrationChannelEnabled, loadOrchestrationRuntimeConfig } from "./runtime-config.js";
 import {
   buildOrchestrationMissionLabel,
   buildOrchestrationMissionStatus,
   buildOrchestrationSuppressionKey,
-  DEFAULT_ORCHESTRATION_SPAWN_COOLDOWN_SECONDS,
   findSuppressedOrchestrationTask,
   isDirectOrchestratorSessionKey,
 } from "./runtime-primitives.js";
@@ -134,6 +134,7 @@ export async function delegateFromSession(params: DelegateParams) {
 
   const loaded = loadSessionEntry(sessionKey);
   const canonicalSessionKey = loaded.canonicalKey;
+  const orchestrationConfig = loadOrchestrationRuntimeConfig();
   const delivery =
     deliveryContextFromSession(loaded.entry) ??
     deriveDirectDeliveryContextFromSessionKey(canonicalSessionKey);
@@ -142,6 +143,9 @@ export async function delegateFromSession(params: DelegateParams) {
     routingClass,
     sourceText: statusSummary,
   });
+  if (!isOrchestrationChannelEnabled(canonicalSessionKey, orchestrationConfig)) {
+    return delegateRejected("Orchestration is disabled for this session.");
+  }
   const suppressionKey = buildOrchestrationSuppressionKey({
     sessionMode: "orchestrator",
     userOrChannel: canonicalSessionKey,
@@ -155,7 +159,7 @@ export async function delegateFromSession(params: DelegateParams) {
       sessionKey: canonicalSessionKey,
       suppressionKey,
     }),
-    cooldownSeconds: DEFAULT_ORCHESTRATION_SPAWN_COOLDOWN_SECONDS,
+    cooldownSeconds: orchestrationConfig.spawnSuppression.cooldownSeconds,
   });
   if (suppression.suppress && suppression.task) {
     const existing = buildOrchestrationMissionStatus(suppression.task);

@@ -5,11 +5,11 @@ import {
 } from "../tasks/task-registry.reconcile.js";
 import type { TaskDeliveryStatus, TaskRecord } from "../tasks/task-registry.types.js";
 import { buildCompactReceipt, buildWorkerTask, normalizeOptionalText } from "./format.js";
+import type { OrchestrationRuntimeConfig } from "./runtime-config.js";
 import {
   buildOrchestrationMissionLabel,
   buildOrchestrationMissionStatus,
   buildOrchestrationSuppressionKey,
-  DEFAULT_ORCHESTRATION_SPAWN_COOLDOWN_SECONDS,
   findSuppressedOrchestrationTask,
   isOrchestratedMissionTask,
 } from "./runtime-primitives.js";
@@ -143,6 +143,7 @@ export function buildPreparedDelegatePlan(params: {
   surface: string;
   toolNeeds?: string[];
   timeoutSeconds?: number;
+  config?: Pick<OrchestrationRuntimeConfig, "spawnSuppression">;
 }) {
   const missionLabel = buildOrchestrationMissionLabel({
     routingClass: params.routingClass,
@@ -161,7 +162,7 @@ export function buildPreparedDelegatePlan(params: {
       sessionKey: params.sessionKey,
       suppressionKey,
     }),
-    cooldownSeconds: DEFAULT_ORCHESTRATION_SPAWN_COOLDOWN_SECONDS,
+    cooldownSeconds: params.config?.spawnSuppression.cooldownSeconds,
   });
   if (suppression.suppress && suppression.task) {
     const existing = buildOrchestrationMissionStatus(suppression.task);

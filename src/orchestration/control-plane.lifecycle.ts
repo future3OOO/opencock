@@ -18,9 +18,9 @@ import {
   listInspectableTasksForSuppressionKey,
 } from "./control-plane.shared.js";
 import { buildCompactCompletion, buildCompactReceipt, normalizeOptionalText } from "./format.js";
+import { loadOrchestrationRuntimeConfig } from "./runtime-config.js";
 import {
   buildOrchestrationMissionStatus,
-  DEFAULT_ORCHESTRATION_SPAWN_COOLDOWN_SECONDS,
   findSuppressedOrchestrationTask,
   isOrchestratedMissionTask,
 } from "./runtime-primitives.js";
@@ -55,6 +55,7 @@ export async function commitDelegatedWorkerFromSession(params: {
   }
   const loaded = loadSessionEntry(sessionKey);
   const canonicalSessionKey = loaded.canonicalKey;
+  const orchestrationConfig = loadOrchestrationRuntimeConfig();
   const suppressionKey = normalizeOptionalText(params.suppressionKey);
   if (suppressionKey) {
     const suppression = findSuppressedOrchestrationTask({
@@ -63,7 +64,7 @@ export async function commitDelegatedWorkerFromSession(params: {
         sessionKey: canonicalSessionKey,
         suppressionKey,
       }),
-      cooldownSeconds: DEFAULT_ORCHESTRATION_SPAWN_COOLDOWN_SECONDS,
+      cooldownSeconds: orchestrationConfig.spawnSuppression.cooldownSeconds,
     });
     if (suppression.suppress && suppression.task) {
       const existing = buildOrchestrationMissionStatus(suppression.task);

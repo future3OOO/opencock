@@ -1,6 +1,8 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { loadConfig } from "../config/config.js";
-import { loadSessionStore, resolveStorePath } from "../config/sessions.js";
+import { clearConfigCache, clearRuntimeConfigSnapshot, loadConfig } from "../config/config.js";
+import { loadSessionStore, resolveStorePath, updateSessionStoreEntry } from "../config/sessions.js";
 import { clearInternalHooks } from "../hooks/internal-hooks.js";
 import {
   createTaskRegistryMissionHooks,
@@ -11,6 +13,7 @@ import { configureTaskRegistryRuntime } from "../tasks/task-registry.store.js";
 import { withTempDir } from "../test-helpers/temp-dir.js";
 
 const ORIGINAL_STATE_DIR = process.env.OPENCLAW_STATE_DIR;
+const ORIGINAL_WORKSPACE_DIR = process.env.OPENCLAW_WORKSPACE_DIR;
 
 async function waitForAssertion(assertion: () => void, timeoutMs = 2_000, stepMs = 10) {
   const startedAt = Date.now();
@@ -30,6 +33,45 @@ async function waitForAssertion(assertion: () => void, timeoutMs = 2_000, stepMs
 async function withControlPlaneTempDir<T>(run: () => Promise<T>): Promise<T> {
   return await withTempDir({ prefix: "openclaw-orchestration-control-" }, async (root) => {
     process.env.OPENCLAW_STATE_DIR = root;
+    process.env.OPENCLAW_WORKSPACE_DIR = path.join(root, "workspace");
+    await fs.mkdir(
+      path.join(process.env.OPENCLAW_WORKSPACE_DIR, "skills", "clawbot-autoresearch"),
+      { recursive: true },
+    );
+    await fs.writeFile(
+      path.join(
+        process.env.OPENCLAW_WORKSPACE_DIR,
+        "skills",
+        "clawbot-autoresearch",
+        "runtime.json",
+      ),
+      JSON.stringify(
+        {
+          orchestration: {
+            enabled: true,
+            enabledChannels: ["cli", "telegram", "whatsapp"],
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    await fs.writeFile(
+      path.join(root, "openclaw.json"),
+      JSON.stringify(
+        {
+          agents: {
+            defaults: {
+              workspace: process.env.OPENCLAW_WORKSPACE_DIR,
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    clearConfigCache();
+    clearRuntimeConfigSnapshot();
     resetTaskRegistryForTests();
     clearInternalHooks();
     configureTaskRegistryRuntime({
@@ -46,10 +88,17 @@ async function withControlPlaneTempDir<T>(run: () => Promise<T>): Promise<T> {
 
 describe("orchestration control plane", () => {
   afterEach(() => {
+    clearConfigCache();
+    clearRuntimeConfigSnapshot();
     if (ORIGINAL_STATE_DIR === undefined) {
       delete process.env.OPENCLAW_STATE_DIR;
     } else {
       process.env.OPENCLAW_STATE_DIR = ORIGINAL_STATE_DIR;
+    }
+    if (ORIGINAL_WORKSPACE_DIR === undefined) {
+      delete process.env.OPENCLAW_WORKSPACE_DIR;
+    } else {
+      process.env.OPENCLAW_WORKSPACE_DIR = ORIGINAL_WORKSPACE_DIR;
     }
     clearInternalHooks();
     resetTaskRegistryForTests({ persist: false });
@@ -217,6 +266,86 @@ describe("orchestration control plane", () => {
           recentMissionIds: ["mission-source-21"],
         });
       });
+    });
+  });
+
+  it("resets direct-session continuity state when orchestration freshness thresholds are exceeded", async () => {
+    await withControlPlaneTempDir(async () => {
+      const { setSessionMissionBinding } = await import("./session-state.js");
+      const { prepareDispatchRequestFromSession } = await import("./control-plane.js");
+
+      const sessionKey = "agent:main:whatsapp:direct:+64270000000";
+      const transcriptPath = path.join(
+        process.env.OPENCLAW_STATE_DIR ?? ".",
+        "sessions",
+        "oversized.jsonl",
+      );
+      await fs.mkdir(path.dirname(transcriptPath), { recursive: true });
+      await fs.writeFile(transcriptPath, "x".repeat(512));
+
+      const workspaceDir = process.env.OPENCLAW_WORKSPACE_DIR ?? ".";
+      await fs.writeFile(
+        path.join(workspaceDir, "skills", "clawbot-autoresearch", "runtime.json"),
+        JSON.stringify(
+          {
+            orchestration: {
+              enabled: true,
+              enabledChannels: ["cli", "telegram", "whatsapp"],
+              directSessionContinuity: {
+                maxTranscriptBytes: 64,
+                maxCompactions: 1,
+                maxWorkerNotices: 2,
+              },
+            },
+          },
+          null,
+          2,
+        ),
+      );
+
+      await setSessionMissionBinding({
+        sessionKey,
+        missionId: "mission-oversized",
+        workerId: "worker-oversized",
+        continuitySummary: "stale continuity summary",
+      });
+      const storePath = resolveStorePath(loadConfig().session?.store, { agentId: "main" });
+      await updateSessionStoreEntry({
+        storePath,
+        sessionKey,
+        update: async () => ({
+          sessionFile: transcriptPath,
+          compactionCount: 3,
+          workerNoticeCount: 4,
+          continuitySummary: "stale continuity summary",
+          continuityUpdatedAt: 111,
+        }),
+      });
+
+      const prepared = await prepareDispatchRequestFromSession({
+        sessionKey,
+        text: "Implement the orchestration runtime config slice",
+        hasRepoMutation: true,
+        allowAutoDelegate: true,
+      });
+
+      expect(prepared).toMatchObject({
+        action: "delegate",
+        routingClass: "coding",
+        orchestratorFreshness: {
+          needsRotation: true,
+          reasons: ["transcript_bytes", "compactions", "worker_notices"],
+        },
+      });
+
+      const store = loadSessionStore(storePath, { skipCache: true });
+      expect(store[sessionKey]).toMatchObject({
+        workerNoticeCount: 0,
+        continuitySummary: null,
+        continuityCapsule: null,
+        freshnessResetReasons: ["transcript_bytes", "compactions", "worker_notices"],
+      });
+      expect(store[sessionKey]?.freshnessResetAt).toEqual(expect.any(Number));
     });
   });
 });
