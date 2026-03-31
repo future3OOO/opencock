@@ -113,6 +113,10 @@ describe("orchestration service", () => {
       expect(entry?.activeMissionId).toBe(result.missionId);
       expect(entry?.focusedWorkerId).toBe(result.workerId);
       expect(entry?.workerNoticeCount).toBe(1);
+      expect(entry?.continuityCapsule).toMatchObject({
+        summary: expect.any(String),
+        activeMissionIds: [result.missionId],
+      });
     });
   });
 
@@ -176,6 +180,9 @@ describe("orchestration service", () => {
         store["agent:main:whatsapp:direct:+64270000000"];
       expect(entry?.activeMissionId).toBe("mission-source-dup");
       expect(entry?.focusedWorkerId).toBe("worker-source-dup");
+      expect(entry?.continuityCapsule).toMatchObject({
+        activeMissionIds: ["mission-source-dup"],
+      });
     });
   });
 
@@ -286,6 +293,57 @@ describe("orchestration service", () => {
       const entry = store["agent:main:whatsapp:direct:+64270000000"];
       expect(entry?.activeMissionId).toBeNull();
       expect(entry?.focusedWorkerId).toBeNull();
+    });
+  });
+
+  it("reconciles missing child sessions through the native task view", async () => {
+    await withOrchestrationTempDir(async () => {
+      const taskExecutor = await import("../tasks/task-executor.js");
+      const { setSessionMissionBinding } = await import("./session-state.js");
+      const { listMissionsFromSession, statusFromSession } = await import("./service.js");
+
+      taskExecutor.createRunningTaskRun({
+        runtime: "subagent",
+        sourceId: "mission-source-lost",
+        orchestrationWorkerId: "worker-source-lost",
+        orchestrationRoutingClass: "coding",
+        orchestrationSurface: "whatsapp",
+        requesterSessionKey: "agent:main:whatsapp:direct:+64270000000",
+        childSessionKey: "agent:main:subagent:missing-child",
+        runId: "run-source-lost",
+        label: "coding",
+        task: "Reconcile lost task",
+        deliveryStatus: "pending",
+        startedAt: 0,
+        lastEventAt: 0,
+      });
+      await setSessionMissionBinding({
+        sessionKey: "agent:main:whatsapp:direct:+64270000000",
+        missionId: "mission-source-lost",
+        workerId: "worker-source-lost",
+      });
+
+      const nowSpy = vi.spyOn(Date, "now").mockReturnValue(10 * 60_000);
+      try {
+        const status = await statusFromSession({
+          sessionKey: "agent:main:whatsapp:direct:+64270000000",
+        });
+        expect(status).toMatchObject({
+          found: true,
+          missionId: "mission-source-lost",
+          state: "lost",
+        });
+
+        const listed = await listMissionsFromSession({
+          sessionKey: "agent:main:whatsapp:direct:+64270000000",
+        });
+        expect(listed.missions?.[0]).toMatchObject({
+          missionId: "mission-source-lost",
+          state: "lost",
+        });
+      } finally {
+        nowSpy.mockRestore();
+      }
     });
   });
 });

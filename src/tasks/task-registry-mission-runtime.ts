@@ -12,6 +12,7 @@ import {
 } from "../config/sessions.js";
 import { createInternalHookEvent, triggerInternalHook } from "../hooks/internal-hooks.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
+import { buildMissionContinuityCapsule } from "../orchestration/continuity-capsule.js";
 import { clearSessionMissionBindingIfMatches } from "../orchestration/session-state.js";
 import { parseAgentSessionKey } from "../routing/session-key.js";
 import type { TaskRegistryHookEvent, TaskRegistryHooks } from "./task-registry.store.js";
@@ -166,6 +167,10 @@ function appendMissionEventHistory(
     .slice(0, MAX_MISSION_EVENT_HISTORY);
 }
 
+function resolveRecentMissionIds(events: SessionMissionEvent[]): string[] {
+  return [...new Set(events.map((event) => event.missionId?.trim()).filter(Boolean))];
+}
+
 function shouldProjectMissionCompletion(params: {
   task: TaskRecord;
   previous?: TaskRecord;
@@ -212,16 +217,27 @@ async function persistMissionCompletionProjection(task: TaskRecord): Promise<voi
     const resolved = resolveSessionStoreEntry({ store, sessionKey });
     const existing = resolved.existing;
     const pending = readPendingMissionMap(existing);
+    const recentMissionEvents = appendMissionEventHistory(
+      existing?.recentMissionEvents,
+      missionEvent,
+    );
+    const updatedAt = Date.now();
     store[resolved.normalizedKey] = mergeSessionEntry(existing, {
       lastDeliveredMission,
-      recentMissionEvents: appendMissionEventHistory(existing?.recentMissionEvents, missionEvent),
+      recentMissionEvents,
       pendingMissionNotifications: {
         ...pending,
         [pendingNotification.missionId]: pendingNotification,
       },
       continuitySummary,
       continuityUpdatedAt: missionEvent.deliveredAt,
-      updatedAt: Date.now(),
+      continuityCapsule: buildMissionContinuityCapsule({
+        updatedAt,
+        summary: continuitySummary,
+        activeMissionIds: existing?.activeMissionId ? [existing.activeMissionId] : [],
+        recentMissionIds: resolveRecentMissionIds(recentMissionEvents),
+      }),
+      updatedAt,
     });
     for (const legacyKey of resolved.legacyKeys) {
       if (legacyKey !== resolved.normalizedKey) {

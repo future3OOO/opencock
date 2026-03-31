@@ -104,6 +104,11 @@ describe("task-registry mission runtime", () => {
             attempts: 0,
           }),
         });
+        expect(entry?.continuityCapsule).toMatchObject({
+          summary:
+            "Mission mission-source-1 completed: Patched the OpenCock source seam and queued the wake.",
+          recentMissionIds: ["mission-source-1"],
+        });
       });
 
       await waitForAssertion(() => {
@@ -156,6 +161,9 @@ describe("task-registry mission runtime", () => {
         const entry = store["agent:main:main"];
         expect(entry?.activeMissionId ?? null).toBeNull();
         expect(entry?.focusedWorkerId ?? null).toBeNull();
+        expect(entry?.continuityCapsule).toMatchObject({
+          recentMissionIds: ["mission-source-4"],
+        });
       });
     });
   });

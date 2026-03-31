@@ -102,6 +102,13 @@ export type SessionMissionEvent = {
   deliveredAt: number;
 };
 
+export type SessionContinuityCapsule = {
+  updatedAt: number;
+  summary?: string | null;
+  activeMissionIds?: string[];
+  recentMissionIds?: string[];
+};
+
 export type SessionEntry = {
   /**
    * Last delivered heartbeat payload (used to suppress duplicate heartbeat notifications).
@@ -223,6 +230,7 @@ export type SessionEntry = {
   acp?: SessionAcpMeta;
   continuitySummary?: string | null;
   continuityUpdatedAt?: number;
+  continuityCapsule?: SessionContinuityCapsule | null;
   workerNoticeCount?: number;
   activeMissionId?: string | null;
   focusedWorkerId?: string | null;
