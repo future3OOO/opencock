@@ -37,6 +37,7 @@ git diff --stat upstream/main...HEAD
 - Mission/delegation completion state is projected into canonical session state in source instead of relying on patched dist-only runtime behavior.
 - Mission wake dispatch is handled in source gateway hooks instead of via heartbeat fallbacks.
 - Session records now carry mission-awareness fields used by orchestration follow-up flows.
+- The native runtime now owns the generic orchestration bridge lifecycle for `prepare`, `commit`, `complete`, `heartbeat`, and canonical mission-status queries.
 
 ### External Custom Surfaces Still To Be Migrated
 
@@ -169,9 +170,43 @@ Why this fork-only:
 
 - the live system required source-owned orchestration semantics that upstream OpenClaw does not currently provide
 
+#### Source-owned orchestration bridge lifecycle slice
+
+Promoted the remaining generic `dispatch.py` bridge lifecycle into OpenCock source so the runtime, not workspace Python, owns the core mission control plane.
+
+- Added source-owned orchestration control-plane modules in:
+  - `src/orchestration/control-plane.ts`
+  - `src/orchestration/control-plane.test.ts`
+  - `src/orchestration/policy.ts`
+  - `src/orchestration/format.ts`
+- Extended source CLI entrypoints in:
+  - `src/cli/program/register.orchestrator.ts`
+  - `src/cli/program/register.orchestrator.test.ts`
+- Slimmed native orchestration service duplication by reusing source formatting helpers in:
+  - `src/orchestration/service.ts`
+
+Behavior change:
+
+- `openclaw orchestrator` now owns source implementations for:
+  - `prepare`
+  - `delegate-explicit`
+  - `commit`
+  - `complete`
+  - `heartbeat`
+  - `query-status`
+- native orchestration `prepare` now classifies direct-session requests, handles continuation binding, and produces canonical delegate plans in source
+- native orchestration `commit` now persists externally spawned delegated workers into the canonical task registry and session binding model
+- native orchestration `heartbeat` and `complete` now update canonical task/session state directly instead of depending on workspace Python worker-registry truth
+- canonical mission-status queries now resolve against source task records for this generic lifecycle slice
+
+Why this fork-only:
+
+- the live system’s broader orchestration bridge was still authoritative in workspace Python under `dispatch.py` / `dispatch_bridge.py`
+- this slice moves the generic engine lifecycle into maintained fork source while leaving tenant-specific autoresearch and Instagram policy in the workspace for now
+
 #### Validation
 
 - Focused tests:
-  - `pnpm exec vitest run src/orchestration/runtime-primitives.test.ts src/orchestration/service.test.ts src/tasks/task-registry.store.test.ts src/tasks/task-registry-mission-runtime.test.ts src/gateway/server.hooks.test.ts src/tasks/task-registry.test.ts src/cli/program/register.orchestrator.test.ts`
+  - `pnpm exec vitest run src/orchestration/control-plane.test.ts src/orchestration/service.test.ts src/cli/program/register.orchestrator.test.ts src/tasks/task-registry-mission-runtime.test.ts`
 - Build:
   - `pnpm build`
