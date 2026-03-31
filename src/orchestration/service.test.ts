@@ -169,6 +169,51 @@ describe("orchestration service", () => {
     });
   });
 
+  it("dispatches raw ingress through the native runtime and spawns when delegation is warranted", async () => {
+    await withOrchestrationTempDir(async () => {
+      const { dispatchRequestFromSession } = await import("./service.js");
+      spawnSubagentDirectMock.mockResolvedValue({
+        status: "accepted",
+        childSessionKey: "agent:main:subagent:child-dispatch",
+        runId: "run-child-dispatch",
+      });
+
+      const result = await dispatchRequestFromSession({
+        sessionKey: "agent:main:whatsapp:direct:+64270000000",
+        text: "Implement the remaining native orchestration ingress",
+        hasRepoMutation: true,
+        toolNeeds: ["rg", "apply_patch"],
+        isMultiStep: true,
+      });
+
+      expect(result).toMatchObject({
+        status: "accepted",
+        action: "delegate",
+        routingClass: "coding",
+        childSessionKey: "agent:main:subagent:child-dispatch",
+        runId: "run-child-dispatch",
+      });
+      expect(spawnSubagentDirectMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("dispatches raw ingress inline when the native classifier keeps it local", async () => {
+    await withOrchestrationTempDir(async () => {
+      const { dispatchRequestFromSession } = await import("./service.js");
+
+      const result = await dispatchRequestFromSession({
+        sessionKey: "agent:main:whatsapp:direct:+64270000000",
+        text: "What did the last worker do?",
+      });
+
+      expect(result).toMatchObject({
+        action: "inline",
+        routingClass: "direct-answer",
+      });
+      expect(spawnSubagentDirectMock).not.toHaveBeenCalled();
+    });
+  });
+
   it("suppresses duplicate delegates against an existing source-owned mission", async () => {
     await withOrchestrationTempDir(async () => {
       const taskExecutor = await import("../tasks/task-executor.js");

@@ -356,10 +356,40 @@ Why this fork-only:
 - the live system still relied on workspace Python `cleanup_stale_bindings()` and related session-status shaping in `dispatch.py`
 - this slice moves the generic binding repair semantics into maintained fork source and shrinks the remaining Python layer toward a thinner compatibility adapter
 
+#### Source-owned dispatch ingress slice
+
+Moved the generic `dispatch_request()` ingress path out of workspace Python and into the native OpenCock orchestration runtime.
+
+- Added dedicated delegate-execution runtime helpers in:
+  - `src/orchestration/delegate-runtime.ts`
+- Extended native orchestration service and shared plan typing in:
+  - `src/orchestration/service.ts`
+  - `src/orchestration/control-plane.shared.ts`
+- Extended the runtime bridge / CLI coverage in:
+  - `src/orchestration/bridge.ts`
+  - `src/orchestration/service.test.ts`
+  - `src/cli/program/register.orchestrator.test.ts`
+
+Behavior change:
+
+- `openclaw orchestrator bridge dispatch` now exists as a native runtime action
+- raw ingress can now enter the native runtime as one source-owned flow:
+  - classify
+  - prepare continuation / inline / delegate decision
+  - execute delegated spawn when warranted
+- prepared delegate execution and suppressed-mission rebinding now live in a focused runtime module instead of being duplicated inside `service.ts`
+- the bridge no longer has to force callers through separate prepare + delegate orchestration steps just to reproduce the old Python `dispatch_request()` semantics
+
+Why this fork-only:
+
+- the live system still relied on workspace Python `dispatch_request()` as the combined ingress authority for ordinary delegated requests
+- this slice moves that generic engine behavior into maintained fork source so the remaining Python layer can shrink toward tenant policy and compatibility only
+
 #### Validation
 
 - Focused tests:
   - `pnpm exec vitest run src/orchestration/control-plane.test.ts src/orchestration/service.test.ts src/cli/program/register.orchestrator.test.ts src/tasks/task-registry-mission-runtime.test.ts`
   - `pnpm exec vitest run src/orchestration/service.test.ts src/orchestration/control-plane.test.ts src/tasks/task-registry-mission-runtime.test.ts src/cli/program/register.orchestrator.test.ts src/tasks/task-registry.test.ts`
+  - `pnpm exec vitest run src/orchestration/service.test.ts src/orchestration/control-plane.test.ts src/cli/program/register.orchestrator.test.ts src/tasks/task-registry.test.ts`
 - Build:
   - `pnpm build`

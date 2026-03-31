@@ -1,19 +1,19 @@
-import { spawnSubagentDirect } from "../agents/subagent-spawn.js";
 import { loadConfig } from "../config/config.js";
-import { updateSessionStoreEntry } from "../config/sessions.js";
 import { loadSessionEntry } from "../gateway/session-utils.js";
-import { parseAgentSessionKey } from "../routing/session-key.js";
 import { cancelTaskById } from "../tasks/task-registry.js";
-import { deliveryContextFromSession } from "../utils/delivery-context.js";
 import {
+  buildPreparedDelegatePlan,
   listInspectableOrchestratedTasks,
-  listInspectableTasksForSuppressionKey,
   resolveMissionTask,
   resolveSpawnSurface,
 } from "./control-plane.shared.js";
 import {
-  buildCompactReceipt,
-  buildWorkerTask,
+  bindSuppressedMissionForSession,
+  executePreparedDelegatePlan,
+  isAcceptedDelegatePlan,
+  isSuppressedDelegatePlan,
+} from "./delegate-runtime.js";
+import {
   compactText,
   DELEGATABLE_ROUTING_CLASSES,
   isDelegatableRoutingClass,
@@ -21,10 +21,7 @@ import {
 } from "./format.js";
 import { isOrchestrationChannelEnabled, loadOrchestrationRuntimeConfig } from "./runtime-config.js";
 import {
-  buildOrchestrationMissionLabel,
   buildOrchestrationMissionStatus,
-  buildOrchestrationSuppressionKey,
-  findSuppressedOrchestrationTask,
   isDirectOrchestratorSessionKey,
 } from "./runtime-primitives.js";
 import { reconcileSessionMissionBinding } from "./session-binding-reconcile.js";
@@ -32,6 +29,7 @@ import { buildSessionMissionOverview } from "./session-overview.js";
 import { setSessionMissionBinding } from "./session-state.js";
 
 export { DELEGATABLE_ROUTING_CLASSES } from "./format.js";
+export { dispatchRequestFromSession } from "./delegate-runtime.js";
 
 type DelegateParams = {
   sessionKey: string;
@@ -45,60 +43,12 @@ type DelegateParams = {
 
 type DelegateManyItem = Omit<DelegateParams, "sessionKey">;
 
-function slugify(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .replace(/-{2,}/g, "-");
-}
-
-function utcSlug(): string {
-  return new Date()
-    .toISOString()
-    .replace(/[-:]/g, "")
-    .replace(/\.\d{3}z$/i, "z")
-    .toLowerCase();
-}
-
-function makeId(prefix: string, label: string, maxSlug = 40): string {
-  const slug = slugify(label).slice(0, maxSlug) || prefix;
-  return `${prefix}-${slug}-${utcSlug()}`;
-}
-
-function deriveDirectDeliveryContextFromSessionKey(sessionKey: string) {
-  const parsed = parseAgentSessionKey(sessionKey);
-  const rest = parsed?.rest?.trim().toLowerCase() ?? "";
-  if (!rest) {
-    return null;
-  }
-  const directMatch = rest.match(/^(whatsapp|telegram)(?::([^:]+))?:direct:(.+)$/);
-  if (!directMatch) {
-    return null;
-  }
-  const channel = directMatch[1];
-  const accountId = directMatch[2]?.trim() || "default";
-  const to = directMatch[3]?.trim();
-  if (!to) {
-    return null;
-  }
-  return {
-    channel,
-    accountId,
-    to,
-    threadId: undefined,
-  };
-}
-
 function resolveEffectiveSpawnSurface(taskSurface: string | undefined, sessionKey: string): string {
   const normalized = normalizeOptionalText(taskSurface);
   if (normalized) {
     return normalized;
   }
-  return resolveSpawnSurface(
-    deriveDirectDeliveryContextFromSessionKey(sessionKey)?.channel,
-    sessionKey,
-  );
+  return resolveSpawnSurface(undefined, sessionKey);
 }
 
 function delegateRejected(message: string) {
@@ -137,128 +87,35 @@ export async function delegateFromSession(params: DelegateParams) {
   const loaded = loadSessionEntry(sessionKey);
   const canonicalSessionKey = loaded.canonicalKey;
   const orchestrationConfig = loadOrchestrationRuntimeConfig();
-  const delivery =
-    deliveryContextFromSession(loaded.entry) ??
-    deriveDirectDeliveryContextFromSessionKey(canonicalSessionKey);
   const surface = resolveEffectiveSpawnSurface(params.surface, canonicalSessionKey);
-  const missionLabel = buildOrchestrationMissionLabel({
-    routingClass,
-    sourceText: statusSummary,
-  });
   if (!isOrchestrationChannelEnabled(canonicalSessionKey, orchestrationConfig)) {
     return delegateRejected("Orchestration is disabled for this session.");
   }
-  const suppressionKey = buildOrchestrationSuppressionKey({
-    sessionMode: "orchestrator",
-    userOrChannel: canonicalSessionKey,
-    missionLabel,
-    surface,
-    toolNeeds: params.toolNeeds,
-  });
-  const suppression = findSuppressedOrchestrationTask({
-    suppressionKey,
-    tasks: listInspectableTasksForSuppressionKey({
-      sessionKey: canonicalSessionKey,
-      suppressionKey,
-    }),
-    cooldownSeconds: orchestrationConfig.spawnSuppression.cooldownSeconds,
-  });
-  if (suppression.suppress && suppression.task) {
-    const existing = buildOrchestrationMissionStatus(suppression.task);
-    if (suppression.task.status === "running") {
-      await setSessionMissionBinding({
-        sessionKey: canonicalSessionKey,
-        missionId: existing.missionId,
-        workerId: existing.workerId,
-        continuitySummary: buildCompactReceipt(
-          existing.missionId,
-          existing.workerId,
-          existing.routingClass ?? routingClass,
-        ),
-      });
-    }
-    return {
-      status: "accepted" as const,
-      action: "suppressed" as const,
-      missionId: existing.missionId,
-      workerId: existing.workerId,
-      routingClass: existing.routingClass ?? routingClass,
-      suppressed: {
-        reason: suppression.reason,
-        existingMissionId: suppression.existingMissionId,
-        existingWorkerId: suppression.existingWorkerId,
-      },
-      replyText: existing.replyText,
-    };
-  }
-  const missionId = makeId("m", missionLabel);
-  const workerId = makeId("w", routingClass, 30);
-  const workerTask = buildWorkerTask({
+  const prepared = buildPreparedDelegatePlan({
+    sessionKey: canonicalSessionKey,
+    routingClass,
     task,
-    missionId,
-    routingClass,
-    sessionKey: canonicalSessionKey,
+    statusSummary,
     surface,
     toolNeeds: params.toolNeeds,
+    timeoutSeconds: params.timeoutSeconds,
+    config: orchestrationConfig,
   });
-  const spawnResult = await spawnSubagentDirect(
-    {
-      task: workerTask,
-      label: routingClass,
-      cleanup: "delete",
-      runTimeoutSeconds: params.timeoutSeconds,
-      expectsCompletionMessage: true,
-      orchestration: {
-        missionId,
-        workerId,
-        routingClass,
-        surface,
-        statusSummary,
-        suppressionKey,
-      },
-    },
-    {
-      agentSessionKey: canonicalSessionKey,
-      agentChannel: delivery?.channel,
-      agentAccountId: delivery?.accountId,
-      agentTo: delivery?.to,
-      agentThreadId: delivery?.threadId,
-      requesterAgentIdOverride: parseAgentSessionKey(canonicalSessionKey)?.agentId,
-    },
-  );
-  if (spawnResult.status !== "accepted" || !spawnResult.runId || !spawnResult.childSessionKey) {
-    return {
-      status: "error" as const,
-      category: "delegate_rejected" as const,
-      error: spawnResult.error ?? "Failed to spawn worker.",
-      missionId,
-      workerId,
-    };
+  if (isSuppressedDelegatePlan(prepared)) {
+    return await bindSuppressedMissionForSession({
+      sessionKey: canonicalSessionKey,
+      routingClass,
+      plan: prepared,
+    });
   }
-  await setSessionMissionBinding({
+  if (!isAcceptedDelegatePlan(prepared)) {
+    return delegateRejected("Failed to build delegate plan.");
+  }
+  return await executePreparedDelegatePlan({
     sessionKey: canonicalSessionKey,
-    missionId,
-    workerId,
-    continuitySummary: buildCompactReceipt(missionId, workerId, routingClass),
+    loaded,
+    plan: prepared,
   });
-  await updateSessionStoreEntry({
-    storePath: loaded.storePath,
-    sessionKey: canonicalSessionKey,
-    update: async (existing) => ({
-      workerNoticeCount: Math.max(0, Number(existing?.workerNoticeCount ?? 0)) + 1,
-      updatedAt: Date.now(),
-    }),
-  }).catch(() => null);
-  return {
-    status: "accepted" as const,
-    action: "delegate" as const,
-    missionId,
-    workerId,
-    routingClass,
-    childSessionKey: spawnResult.childSessionKey,
-    runId: spawnResult.runId,
-    replyText: buildCompactReceipt(missionId, workerId, routingClass),
-  };
 }
 
 export async function delegateManyFromSession(params: {
