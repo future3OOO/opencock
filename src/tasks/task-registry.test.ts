@@ -1,5 +1,8 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { startAcpSpawnParentStreamRelay } from "../agents/acp-spawn-parent-stream.js";
+import { clearConfigCache, clearRuntimeConfigSnapshot } from "../config/config.js";
 import { emitAgentEvent } from "../infra/agent-events.js";
 import {
   hasPendingHeartbeatWake,
@@ -37,6 +40,7 @@ import {
 import { configureTaskRegistryRuntime } from "./task-registry.store.js";
 
 const ORIGINAL_STATE_DIR = process.env.OPENCLAW_STATE_DIR;
+const ORIGINAL_WORKSPACE_DIR = process.env.OPENCLAW_WORKSPACE_DIR;
 const hoisted = vi.hoisted(() => {
   const sendMessageMock = vi.fn();
   const cancelSessionMock = vi.fn();
@@ -102,6 +106,25 @@ async function flushAsyncWork(times = 4) {
 async function withTaskRegistryTempDir<T>(run: (root: string) => Promise<T>): Promise<T> {
   return await withTempDir({ prefix: "openclaw-task-registry-" }, async (root) => {
     process.env.OPENCLAW_STATE_DIR = root;
+    const workspaceDir = path.join(root, "workspace");
+    process.env.OPENCLAW_WORKSPACE_DIR = workspaceDir;
+    await fs.mkdir(path.join(workspaceDir, "skills", "clawbot-autoresearch"), { recursive: true });
+    await fs.writeFile(
+      path.join(root, "openclaw.json"),
+      JSON.stringify(
+        {
+          agents: {
+            defaults: {
+              workspace: workspaceDir,
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    clearConfigCache();
+    clearRuntimeConfigSnapshot();
     resetTaskRegistryForTests();
     resetFlowRegistryForTests();
     try {
@@ -117,10 +140,17 @@ async function withTaskRegistryTempDir<T>(run: (root: string) => Promise<T>): Pr
 describe("task-registry", () => {
   afterEach(() => {
     vi.useRealTimers();
+    clearConfigCache();
+    clearRuntimeConfigSnapshot();
     if (ORIGINAL_STATE_DIR === undefined) {
       delete process.env.OPENCLAW_STATE_DIR;
     } else {
       process.env.OPENCLAW_STATE_DIR = ORIGINAL_STATE_DIR;
+    }
+    if (ORIGINAL_WORKSPACE_DIR === undefined) {
+      delete process.env.OPENCLAW_WORKSPACE_DIR;
+    } else {
+      process.env.OPENCLAW_WORKSPACE_DIR = ORIGINAL_WORKSPACE_DIR;
     }
     resetSystemEventsForTest();
     resetHeartbeatWakeStateForTests();
@@ -947,6 +977,64 @@ describe("task-registry", () => {
       expect(getTaskById(task.taskId)).toMatchObject({
         status: "lost",
         error: "backing session missing",
+      });
+      expect(getTaskById(task.taskId)?.cleanupAfter).toBeGreaterThan(now);
+    });
+  });
+
+  it("marks stale orchestrated tasks lost using source-owned heartbeat policy", async () => {
+    await withTaskRegistryTempDir(async (root) => {
+      process.env.OPENCLAW_STATE_DIR = root;
+      resetTaskRegistryForTests();
+      const workspaceDir = path.join(root, "workspace");
+      await fs.writeFile(
+        path.join(workspaceDir, "skills", "clawbot-autoresearch", "runtime.json"),
+        JSON.stringify(
+          {
+            orchestration: {
+              heartbeat: {
+                staleMultiplier: 2,
+                perRoutingClass: {
+                  coding: 10,
+                },
+              },
+            },
+          },
+          null,
+          2,
+        ),
+      );
+      clearConfigCache();
+      clearRuntimeConfigSnapshot();
+      const now = Date.now();
+
+      const task = createTaskRecord({
+        runtime: "cli",
+        requesterSessionKey: "agent:main:main",
+        runId: "run-stale-orchestration",
+        task: "Stale orchestrated task",
+        status: "running",
+        deliveryStatus: "pending",
+        orchestrationRoutingClass: "coding",
+      });
+      setTaskTimingById({
+        taskId: task.taskId,
+        lastEventAt: now - 30_000,
+      });
+
+      expect(previewTaskRegistryMaintenance()).toEqual({
+        reconciled: 1,
+        cleanupStamped: 0,
+        pruned: 0,
+      });
+      expect(runTaskRegistryMaintenance()).toEqual({
+        reconciled: 1,
+        cleanupStamped: 0,
+        pruned: 0,
+      });
+      expect(getTaskById(task.taskId)).toMatchObject({
+        status: "lost",
+        error: "orchestration heartbeat stale: coding",
       });
       expect(getTaskById(task.taskId)?.cleanupAfter).toBeGreaterThan(now);
     });
