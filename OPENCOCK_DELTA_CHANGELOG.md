@@ -49,6 +49,28 @@ git diff --stat upstream/main...HEAD
 
 ### 2026-04-01
 
+#### Source-owned external task registration for quarantined workspace work
+
+Promoted the session-separation quarantine registration seam into OpenCock source so externally parked work can be tracked in the canonical task ledger instead of the legacy Python worker registry.
+
+- Added source-owned external task registration in:
+  - `src/orchestration/external-runtime.ts`
+  - `src/orchestration/external-runtime.test.ts`
+- Extended the native orchestrator CLI in:
+  - `src/cli/program/register.orchestrator.ts`
+  - `src/cli/program/register.orchestrator.test.ts`
+
+Behavior change:
+
+- `openclaw orchestrator register-external` now registers parked/quarantined work as a native `cli` task record owned by the requester session
+- externally parked work is marked `lost` in the canonical task ledger immediately, with worktree/branch/artifact context preserved in the runtime task metadata
+- this creates a native runtime seam for `session_separation.py` and similar tooling to stop calling `worker_registry.upsert_worker(...)` for generic quarantined work
+
+Why this fork-only:
+
+- the live system currently parks dirty workspace work by synthesizing legacy worker-registry records from workspace Python
+- this slice moves that generic lifecycle truth into maintained runtime source so the remaining Python layer can shrink to a compatibility adapter
+
 #### Source-owned orchestration runtime config and continuity freshness slice
 
 Promoted the remaining generic orchestration config/defaults and direct-session continuity thresholds out of workspace Python and into OpenCock source.

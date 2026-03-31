@@ -14,6 +14,7 @@ const delegateManyFromSessionMock = vi.fn();
 const listMissionsFromSessionMock = vi.fn();
 const statusFromSessionMock = vi.fn();
 const cancelMissionFromSessionMock = vi.fn();
+const registerExternalTaskFromSessionMock = vi.fn();
 
 vi.mock("../../orchestration/control-plane.js", () => ({
   prepareDispatchRequestFromSession: (...args: unknown[]) =>
@@ -27,6 +28,11 @@ vi.mock("../../orchestration/control-plane.js", () => ({
   queryMissionStatusFromSession: (...args: unknown[]) => queryMissionStatusFromSessionMock(...args),
   querySessionStatusFromSession: (...args: unknown[]) => querySessionStatusFromSessionMock(...args),
   listOrchestratorMissionsFromSession: vi.fn(),
+}));
+
+vi.mock("../../orchestration/external-runtime.js", () => ({
+  registerExternalTaskFromSession: (...args: unknown[]) =>
+    registerExternalTaskFromSessionMock(...args),
 }));
 
 vi.mock("../../orchestration/service.js", () => ({
@@ -64,6 +70,7 @@ describe("registerOrchestratorCommand", () => {
     listMissionsFromSessionMock.mockReset();
     statusFromSessionMock.mockReset();
     cancelMissionFromSessionMock.mockReset();
+    registerExternalTaskFromSessionMock.mockReset();
   });
 
   it("registers the orchestrator top-level command", async () => {
@@ -77,6 +84,7 @@ describe("registerOrchestratorCommand", () => {
       "prepare",
       "delegate-explicit",
       "delegate",
+      "register-external",
       "commit",
       "delegate-many",
       "complete",
@@ -126,6 +134,73 @@ describe("registerOrchestratorCommand", () => {
           statusSummary: "implementing port",
           task: "Move orchestration into source",
           surface: "whatsapp",
+        }),
+      );
+    } finally {
+      if (prevEnv === undefined) {
+        delete process.env.OPENCLAW_SESSION_KEY;
+      } else {
+        process.env.OPENCLAW_SESSION_KEY = prevEnv;
+      }
+      process.exitCode = prevExit;
+      stdout.mockRestore();
+    }
+  });
+
+  it("routes register-external args into the native external-task runtime", async () => {
+    const { registerOrchestratorCommand } = await import("./register.orchestrator.js");
+    registerExternalTaskFromSessionMock.mockResolvedValue({
+      status: "accepted",
+      action: "registered",
+      taskId: "task-external-1",
+    });
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const prevEnv = process.env.OPENCLAW_SESSION_KEY;
+    process.env.OPENCLAW_SESSION_KEY = "agent:main:main";
+    const prevExit = process.exitCode;
+    process.exitCode = undefined;
+    try {
+      const program = new Command();
+      registerOrchestratorCommand(program);
+      await program.parseAsync([
+        "node",
+        "openclaw",
+        "orchestrator",
+        "register-external",
+        "--routing-class",
+        "coding",
+        "--label",
+        "session-separation-signup",
+        "--task",
+        "Quarantined dirty live workspace changes for later continuation",
+        "--surface",
+        "general",
+        "--source-id",
+        "worker-signup-1",
+        "--run-id",
+        "worker-signup-1",
+        "--status-summary",
+        "migrated from live workspace; no active execution mechanism yet",
+        "--worktree-path",
+        "/tmp/worktree",
+        "--branch",
+        "worker/signup",
+        "--artifact-path",
+        "/tmp/patch.diff",
+      ]);
+      expect(registerExternalTaskFromSessionMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionKey: "agent:main:main",
+          routingClass: "coding",
+          label: "session-separation-signup",
+          task: "Quarantined dirty live workspace changes for later continuation",
+          surface: "general",
+          sourceId: "worker-signup-1",
+          runId: "worker-signup-1",
+          statusSummary: "migrated from live workspace; no active execution mechanism yet",
+          worktreePath: "/tmp/worktree",
+          branch: "worker/signup",
+          artifactPath: "/tmp/patch.diff",
         }),
       );
     } finally {

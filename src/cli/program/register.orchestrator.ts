@@ -12,6 +12,7 @@ import {
   prepareDispatchRequestFromSession,
   queryMissionStatusFromSession,
 } from "../../orchestration/control-plane.js";
+import { registerExternalTaskFromSession } from "../../orchestration/external-runtime.js";
 import {
   DELEGATABLE_ROUTING_CLASSES,
   cancelMissionFromSession,
@@ -284,6 +285,59 @@ export function registerOrchestratorCommand(program: Command) {
         surface: opts.surface,
         toolNeeds: opts.toolNeed,
         timeoutSeconds: opts.timeoutSeconds,
+      });
+      output(result);
+      if (result.status !== "accepted") {
+        process.exitCode = 1;
+      }
+    });
+
+  orch
+    .command("register-external")
+    .description("Register externally parked or quarantined work against the native task runtime")
+    .option("--routing-class <class>", `Routing class (${DELEGATABLE_ROUTING_CLASSES_TEXT})`)
+    .option("--routingClass <class>", "Alias for --routing-class")
+    .requiredOption("--label <text>", "Short label for the parked task")
+    .requiredOption("--task <text>", "Long-form task description")
+    .option("--surface <surface>", "Surface context (default: session channel/general)")
+    .option("--source-id <id>", "Stable external/source id for the parked task")
+    .option("--run-id <id>", "Optional external run id")
+    .option("--status-summary <text>", "Compact summary for the parked task")
+    .option("--worktree-path <path>", "Associated worktree path")
+    .option("--branch <name>", "Associated git branch")
+    .option("--artifact-path <path>", "Associated patch or artifact path")
+    .option("--session-key <key>", "Session key override (debug only)")
+    .option("--json", "Output JSON", true)
+    .action(async (opts) => {
+      const routingClass = opts.routingClass?.trim();
+      if (!routingClass) {
+        output(errorPayload("Missing --routing-class.", "delegate_rejected"));
+        process.exitCode = 1;
+        return;
+      }
+      const sessionKey = resolveSessionKey(opts);
+      if (!sessionKey) {
+        output(
+          errorPayload(
+            "No session key. Set OPENCLAW_SESSION_KEY or pass --session-key.",
+            "invalid_session",
+          ),
+        );
+        process.exitCode = 1;
+        return;
+      }
+      const result = await registerExternalTaskFromSession({
+        sessionKey,
+        routingClass,
+        label: opts.label,
+        task: opts.task,
+        surface: opts.surface,
+        sourceId: opts.sourceId,
+        runId: opts.runId,
+        statusSummary: opts.statusSummary,
+        worktreePath: opts.worktreePath,
+        branch: opts.branch,
+        artifactPath: opts.artifactPath,
       });
       output(result);
       if (result.status !== "accepted") {
