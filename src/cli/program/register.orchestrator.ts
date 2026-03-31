@@ -169,6 +169,7 @@ export function registerOrchestratorCommand(program: Command) {
     .option("--task-file <path>", "Read task from file")
     .option("--surface <surface>", "Surface context (default: session channel/general)")
     .option("--tool-need <name...>", "Tool needs for the worker")
+    .option("--mutation-target <path...>", "Explicit mutation targets for delegated work")
     .option("--timeout-seconds <n>", "Worker run timeout in seconds", parseInt)
     .option("--session-key <key>", "Session key override (debug only)")
     .option("--json", "Output JSON", true)
@@ -215,6 +216,9 @@ export function registerOrchestratorCommand(program: Command) {
         statusSummary: opts.statusSummary,
         surface: opts.surface,
         toolNeeds: resolveToolNeeds(opts),
+        mutationTargets: Array.isArray(opts.mutationTarget)
+          ? opts.mutationTarget.map((item: string) => item.trim()).filter(Boolean)
+          : undefined,
         timeoutSeconds: opts.timeoutSeconds,
       });
       output(result);

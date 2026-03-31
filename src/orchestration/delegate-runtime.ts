@@ -119,6 +119,7 @@ export async function executePreparedDelegatePlan(params: {
         surface: params.plan.surface,
         statusSummary: params.plan.statusSummary,
         suppressionKey: params.plan.suppressionKey,
+        mutationTargets: params.plan.mutationTargets,
       },
     },
     {

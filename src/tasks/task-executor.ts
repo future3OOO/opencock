@@ -76,6 +76,7 @@ export function createQueuedTaskRun(params: {
   orchestrationSurface?: string;
   orchestrationStatusSummary?: string;
   orchestrationSuppressionKey?: string;
+  orchestrationMutationTargets?: string[];
   requesterSessionKey: string;
   requesterOrigin?: TaskDeliveryState["requesterOrigin"];
   parentFlowId?: string;
@@ -107,6 +108,7 @@ export function createRunningTaskRun(params: {
   orchestrationSurface?: string;
   orchestrationStatusSummary?: string;
   orchestrationSuppressionKey?: string;
+  orchestrationMutationTargets?: string[];
   requesterSessionKey: string;
   requesterOrigin?: TaskDeliveryState["requesterOrigin"];
   parentFlowId?: string;

@@ -162,6 +162,7 @@ export async function delegateExplicitRequestFromSession(params: {
   statusSummary: string;
   surface?: string;
   toolNeeds?: string[];
+  mutationTargets?: string[];
   timeoutSeconds?: number;
 }) {
   const sessionKey = normalizeOptionalText(params.sessionKey);
@@ -203,6 +204,7 @@ export async function delegateExplicitRequestFromSession(params: {
     statusSummary,
     surface: resolveSpawnSurface(params.surface, canonicalSessionKey),
     toolNeeds: params.toolNeeds,
+    mutationTargets: params.mutationTargets,
     timeoutSeconds: params.timeoutSeconds,
     config: orchestrationConfig,
   });

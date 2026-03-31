@@ -268,6 +268,7 @@ export function createSubagentRunManager(params: {
     orchestrationSurface?: string;
     orchestrationStatusSummary?: string;
     orchestrationSuppressionKey?: string;
+    orchestrationMutationTargets?: string[];
     childSessionKey: string;
     controllerSessionKey?: string;
     requesterSessionKey: string;
@@ -334,6 +335,7 @@ export function createSubagentRunManager(params: {
         orchestrationSurface: registerParams.orchestrationSurface,
         orchestrationStatusSummary: registerParams.orchestrationStatusSummary,
         orchestrationSuppressionKey: registerParams.orchestrationSuppressionKey,
+        orchestrationMutationTargets: registerParams.orchestrationMutationTargets,
         requesterSessionKey: registerParams.requesterSessionKey,
         requesterOrigin,
         childSessionKey: registerParams.childSessionKey,

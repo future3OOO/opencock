@@ -142,9 +142,13 @@ export function buildPreparedDelegatePlan(params: {
   statusSummary: string;
   surface: string;
   toolNeeds?: string[];
+  mutationTargets?: string[];
   timeoutSeconds?: number;
   config?: Pick<OrchestrationRuntimeConfig, "spawnSuppression">;
 }) {
+  const mutationTargets = Array.isArray(params.mutationTargets)
+    ? Array.from(new Set(params.mutationTargets.map((target) => target.trim()).filter(Boolean)))
+    : [];
   const missionLabel = buildOrchestrationMissionLabel({
     routingClass: params.routingClass,
     sourceText: params.statusSummary,
@@ -199,9 +203,11 @@ export function buildPreparedDelegatePlan(params: {
       sessionKey: params.sessionKey,
       surface: params.surface,
       toolNeeds: params.toolNeeds,
+      mutationTargets,
     }),
     workerLabel: params.routingClass,
     runTimeoutSeconds: params.timeoutSeconds,
+    mutationTargets: mutationTargets.length > 0 ? mutationTargets : undefined,
     replyText: buildCompactReceipt(missionId, workerId, params.routingClass),
   };
 }

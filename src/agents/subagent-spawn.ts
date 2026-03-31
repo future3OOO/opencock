@@ -93,6 +93,7 @@ export type SpawnSubagentParams = {
     surface?: string;
     statusSummary?: string;
     suppressionKey?: string;
+    mutationTargets?: string[];
   };
 };
 
@@ -826,6 +827,7 @@ export async function spawnSubagentDirect(
       orchestrationSurface: params.orchestration?.surface,
       orchestrationStatusSummary: params.orchestration?.statusSummary,
       orchestrationSuppressionKey: params.orchestration?.suppressionKey,
+      orchestrationMutationTargets: params.orchestration?.mutationTargets,
     });
   } catch (err) {
     if (attachmentAbsDir) {

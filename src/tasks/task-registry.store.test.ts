@@ -168,6 +168,10 @@ describe("task-registry store runtime", () => {
       orchestrationSurface: "whatsapp",
       orchestrationStatusSummary: "porting orchestration authority",
       orchestrationSuppressionKey: "suppression-789",
+      orchestrationMutationTargets: [
+        "skills/clawbot-autoresearch/scripts/dispatch.py",
+        "skills/clawbot-autoresearch/scripts/score_round.py",
+      ],
       childSessionKey: "agent:main:subagent:worker-789",
       runId: "run-orchestration",
       task: "Migrate mission router authority",
@@ -185,6 +189,10 @@ describe("task-registry store runtime", () => {
       orchestrationSurface: "whatsapp",
       orchestrationStatusSummary: "porting orchestration authority",
       orchestrationSuppressionKey: "suppression-789",
+      orchestrationMutationTargets: [
+        "skills/clawbot-autoresearch/scripts/dispatch.py",
+        "skills/clawbot-autoresearch/scripts/score_round.py",
+      ],
     });
   });
 

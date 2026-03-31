@@ -151,6 +151,7 @@ describe("orchestration control plane", () => {
         workerSessionKey: "agent:main:subagent:child-20",
         processSessionId: "run-source-20",
         statusSummary: "porting the remaining Python control plane",
+        mutationTargets: ["skills/clawbot-autoresearch/scripts/dispatch.py"],
       });
 
       expect(result).toMatchObject({
@@ -168,6 +169,7 @@ describe("orchestration control plane", () => {
         childSessionKey: "agent:main:subagent:child-20",
         runId: "run-source-20",
         status: "running",
+        orchestrationMutationTargets: ["skills/clawbot-autoresearch/scripts/dispatch.py"],
       });
 
       const storePath = resolveStorePath(loadConfig().session?.store, { agentId: "main" });
@@ -180,6 +182,41 @@ describe("orchestration control plane", () => {
           activeMissionIds: ["mission-source-20"],
         }),
       });
+    });
+  });
+
+  it("preserves explicit mutation targets in native delegate plans", async () => {
+    await withControlPlaneTempDir(async () => {
+      const { delegateExplicitRequestFromSession } = await import("./control-plane.js");
+
+      const result = await delegateExplicitRequestFromSession({
+        sessionKey: "agent:main:whatsapp:direct:+64270000000",
+        routingClass: "self-improvement",
+        task: "Run benchmarked Instagram caption work",
+        statusSummary: "benchmarking caption improvements",
+        surface: "instagram-caption-style",
+        mutationTargets: [
+          "skills/clawbot-autoresearch/scripts/dispatch.py",
+          "skills/clawbot-autoresearch/scripts/dispatch.py",
+          "skills/clawbot-autoresearch/scripts/score_round.py",
+        ],
+      });
+
+      expect(result).toMatchObject({
+        status: "accepted",
+        action: "delegate",
+        routingClass: "self-improvement",
+        mutationTargets: [
+          "skills/clawbot-autoresearch/scripts/dispatch.py",
+          "skills/clawbot-autoresearch/scripts/score_round.py",
+        ],
+      });
+      if (!("workerTask" in result)) {
+        throw new Error("delegateExplicitRequestFromSession did not return a delegate plan");
+      }
+      expect(result.workerTask).toContain(
+        "Mutation targets: skills/clawbot-autoresearch/scripts/dispatch.py, skills/clawbot-autoresearch/scripts/score_round.py.",
+      );
     });
   });
 

@@ -385,6 +385,42 @@ Why this fork-only:
 - the live system still relied on workspace Python `dispatch_request()` as the combined ingress authority for ordinary delegated requests
 - this slice moves that generic engine behavior into maintained fork source so the remaining Python layer can shrink toward tenant policy and compatibility only
 
+#### Source-owned mutation-target-aware delegate lifecycle slice
+
+Moved explicit mutation-target carriage into the native delegate/commit lifecycle so self-improvement validation can remain workspace policy without owning task execution state.
+
+- Extended canonical task metadata in:
+  - `src/tasks/task-registry.types.ts`
+  - `src/tasks/task-registry.ts`
+  - `src/tasks/task-registry.store.sqlite.ts`
+  - `src/tasks/task-registry.store.test.ts`
+- Extended native delegate / commit execution in:
+  - `src/orchestration/control-plane.shared.ts`
+  - `src/orchestration/control-plane.prepare.ts`
+  - `src/orchestration/control-plane.lifecycle.ts`
+  - `src/orchestration/delegate-runtime.ts`
+  - `src/orchestration/format.ts`
+  - `src/orchestration/bridge.ts`
+  - `src/cli/program/register.orchestrator.ts`
+  - `src/cli/program/register.orchestrator.test.ts`
+- Extended subagent task registration in:
+  - `src/agents/subagent-spawn.ts`
+  - `src/agents/subagent-registry.ts`
+  - `src/agents/subagent-registry-run-manager.ts`
+
+Behavior change:
+
+- explicit delegate plans can now carry normalized `mutationTargets`
+- worker task text includes a `Mutation targets:` line when the caller supplied explicit targets
+- native delegated worker commits persist those mutation targets on canonical task records
+- sqlite persistence round-trips the mutation-target list through `orchestration_mutation_targets_json`
+- duplicate mutation targets are deduped at the runtime boundary instead of leaving normalization to the workspace Python layer
+
+Why this fork-only:
+
+- the live system still relied on workspace Python self-improvement delegation paths to carry mutation-target intent through to worker execution
+- this slice moves that generic lifecycle/data-shape responsibility into maintained fork source so the workspace can keep only self-improvement policy and validation
+
 #### Validation
 
 - Focused tests:
