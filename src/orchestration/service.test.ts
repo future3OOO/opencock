@@ -1,5 +1,7 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { loadConfig } from "../config/config.js";
+import { clearConfigCache, clearRuntimeConfigSnapshot, loadConfig } from "../config/config.js";
 import { loadSessionStore, resolveStorePath } from "../config/sessions.js";
 import { loadSessionEntry } from "../gateway/session-utils.js";
 import { withTempDir } from "../test-helpers/temp-dir.js";
@@ -32,10 +34,50 @@ vi.mock("../tasks/task-registry.js", async () => {
 });
 
 const ORIGINAL_STATE_DIR = process.env.OPENCLAW_STATE_DIR;
+const ORIGINAL_WORKSPACE_DIR = process.env.OPENCLAW_WORKSPACE_DIR;
 
 async function withOrchestrationTempDir<T>(run: (root: string) => Promise<T>): Promise<T> {
   return await withTempDir({ prefix: "openclaw-orchestration-" }, async (root) => {
     process.env.OPENCLAW_STATE_DIR = root;
+    process.env.OPENCLAW_WORKSPACE_DIR = path.join(root, "workspace");
+    await fs.mkdir(
+      path.join(process.env.OPENCLAW_WORKSPACE_DIR, "skills", "clawbot-autoresearch"),
+      { recursive: true },
+    );
+    await fs.writeFile(
+      path.join(
+        process.env.OPENCLAW_WORKSPACE_DIR,
+        "skills",
+        "clawbot-autoresearch",
+        "runtime.json",
+      ),
+      JSON.stringify(
+        {
+          orchestration: {
+            enabled: true,
+            enabledChannels: ["cli", "telegram", "whatsapp"],
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    await fs.writeFile(
+      path.join(root, "openclaw.json"),
+      JSON.stringify(
+        {
+          agents: {
+            defaults: {
+              workspace: process.env.OPENCLAW_WORKSPACE_DIR,
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    clearConfigCache();
+    clearRuntimeConfigSnapshot();
     const { resetTaskRegistryForTests } = await import("../tasks/task-registry.js");
     resetTaskRegistryForTests();
     try {
@@ -53,12 +95,19 @@ describe("orchestration service", () => {
   });
 
   afterEach(async () => {
+    clearConfigCache();
+    clearRuntimeConfigSnapshot();
     const { resetTaskRegistryForTests } = await import("../tasks/task-registry.js");
     resetTaskRegistryForTests({ persist: false });
     if (ORIGINAL_STATE_DIR === undefined) {
       delete process.env.OPENCLAW_STATE_DIR;
     } else {
       process.env.OPENCLAW_STATE_DIR = ORIGINAL_STATE_DIR;
+    }
+    if (ORIGINAL_WORKSPACE_DIR === undefined) {
+      delete process.env.OPENCLAW_WORKSPACE_DIR;
+    } else {
+      process.env.OPENCLAW_WORKSPACE_DIR = ORIGINAL_WORKSPACE_DIR;
     }
   });
 
