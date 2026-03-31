@@ -27,7 +27,9 @@ import {
   findSuppressedOrchestrationTask,
   isDirectOrchestratorSessionKey,
 } from "./runtime-primitives.js";
-import { readSessionMissionBinding, setSessionMissionBinding } from "./session-state.js";
+import { reconcileSessionMissionBinding } from "./session-binding-reconcile.js";
+import { buildSessionMissionOverview } from "./session-overview.js";
+import { setSessionMissionBinding } from "./session-state.js";
 
 export { DELEGATABLE_ROUTING_CLASSES } from "./format.js";
 
@@ -304,22 +306,32 @@ export async function statusFromSession(params: { sessionKey: string; missionId?
       error: "Missing session key. Set OPENCLAW_SESSION_KEY.",
     };
   }
-  const target = resolveMissionTask(sessionKey, params.missionId);
-  if (target) {
-    return buildOrchestrationMissionStatus(target);
+  const explicitMissionId = normalizeOptionalText(params.missionId);
+  if (explicitMissionId) {
+    const target = resolveMissionTask(sessionKey, explicitMissionId);
+    if (target) {
+      return buildOrchestrationMissionStatus(target);
+    }
   }
-  const loaded = loadSessionEntry(sessionKey);
+  const reconciledBinding = await reconcileSessionMissionBinding({ sessionKey });
+  const loaded = loadSessionEntry(reconciledBinding.sessionKey);
   const sessionTasks = listInspectableOrchestratedTasks().filter(
     (task) => task.requesterSessionKey === loaded.canonicalKey,
   );
+  const missionStatuses = sessionTasks.map((task) => buildOrchestrationMissionStatus(task));
   const active = sessionTasks.filter((task) => task.status === "running");
+  if (active.length === 1) {
+    return buildOrchestrationMissionStatus(active[0]);
+  }
   if (active.length > 1) {
     return {
       found: true,
       missionId: null,
       state: "running",
       missions: active.map((task) => buildOrchestrationMissionStatus(task)),
-      replyText: `Multiple missions are running (${active.length}).`,
+      replyText:
+        buildSessionMissionOverview(missionStatuses) ??
+        `Multiple missions are running (${active.length}).`,
     };
   }
   if (sessionTasks.length > 0) {
@@ -327,15 +339,15 @@ export async function statusFromSession(params: { sessionKey: string; missionId?
       found: false,
       missionId: null,
       state: null,
-      missions: sessionTasks.slice(0, 3).map((task) => buildOrchestrationMissionStatus(task)),
-      replyText: "No active worker is bound.",
+      missions: missionStatuses.slice(0, 3),
+      replyText: buildSessionMissionOverview(missionStatuses) ?? "No active worker is bound.",
     };
   }
   return {
     found: false,
     missionId: null,
     state: null,
-    workerId: readSessionMissionBinding(loaded.entry).focusedWorkerId,
+    workerId: reconciledBinding.binding.focusedWorkerId,
     replyText: "No active worker is bound.",
   };
 }
@@ -352,6 +364,9 @@ export async function listMissionsFromSession(params: {
       category: "invalid_session" as const,
       error: "Missing session key. Set OPENCLAW_SESSION_KEY.",
     };
+  }
+  if (!params.allDirectSessions) {
+    await reconcileSessionMissionBinding({ sessionKey });
   }
   const loaded = loadSessionEntry(sessionKey);
   const missions = listInspectableOrchestratedTasks()

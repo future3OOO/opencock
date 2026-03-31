@@ -333,6 +333,29 @@ Why this fork-only:
 - the live system still relied on workspace Python cleanup semantics to decide when delegated work had gone stale
 - this slice moves the generic heartbeat-staleness decision into maintained fork source while leaving tenant-specific routing policy in the workspace
 
+#### Source-owned session binding reconciliation and mission overview slice
+
+Moved another chunk of generic `dispatch.py` session repair/read-model logic into OpenCock source so stale bindings are cleared natively before continuation, status, and list flows.
+
+- Added source-owned binding reconciliation in:
+  - `src/orchestration/session-binding-reconcile.ts`
+- Extended native orchestration read paths in:
+  - `src/orchestration/control-plane.prepare.ts`
+  - `src/orchestration/service.ts`
+  - `src/orchestration/control-plane.test.ts`
+  - `src/orchestration/service.test.ts`
+
+Behavior change:
+
+- native orchestration now clears stale `activeMissionId` / `focusedWorkerId` bindings before evaluating continuation intent
+- session `status` and `list` now rebase on the reconciled task view instead of trusting possibly stale bindings first
+- explicit mission-id lookups still return terminal/lost mission state, but ordinary session-status lookups now clear dead bindings and fall back to recent mission results
+
+Why this fork-only:
+
+- the live system still relied on workspace Python `cleanup_stale_bindings()` and related session-status shaping in `dispatch.py`
+- this slice moves the generic binding repair semantics into maintained fork source and shrinks the remaining Python layer toward a thinner compatibility adapter
+
 #### Validation
 
 - Focused tests:
