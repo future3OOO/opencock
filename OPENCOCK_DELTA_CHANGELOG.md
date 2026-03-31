@@ -309,6 +309,30 @@ Why this fork-only:
 - the live system still relies on a workspace Python bridge shape, but the generic lifecycle behind that shape now belongs in the OpenCock runtime
 - this slice moves the live compatibility seam into maintained fork source so the remaining Python layer can become a thin adapter
 
+#### Source-owned orchestration maintenance slice
+
+Moved another generic `worker_registry.py` / `mission_router.py` cleanup responsibility into OpenCock source by extending the native task maintenance pass with orchestrator heartbeat staleness.
+
+- Added source-owned maintenance policy in:
+  - `src/orchestration/maintenance.ts`
+  - `src/orchestration/maintenance.test.ts`
+- Extended the native task sweeper in:
+  - `src/tasks/task-registry.maintenance.ts`
+  - `src/tasks/task-registry.test.ts`
+
+Behavior change:
+
+- the existing native task-registry maintenance pass now evaluates orchestrated active tasks against source-owned heartbeat policy
+- orchestrated tasks whose heartbeat window has expired are reclassified as `lost` with an explicit runtime-owned reason:
+  - `orchestration heartbeat stale: <routingClass>`
+- this happens inside the existing task sweeper instead of relying on the old Python cleanup loop to detect stale delegated work
+- task-registry tests now pin orchestration runtime config to a temp workspace/config, so maintenance semantics no longer depend on the machine’s live OpenClaw config during test runs
+
+Why this fork-only:
+
+- the live system still relied on workspace Python cleanup semantics to decide when delegated work had gone stale
+- this slice moves the generic heartbeat-staleness decision into maintained fork source while leaving tenant-specific routing policy in the workspace
+
 #### Validation
 
 - Focused tests:

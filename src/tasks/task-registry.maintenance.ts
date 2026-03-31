@@ -1,5 +1,6 @@
 import { readAcpSessionEntry } from "../acp/runtime/session-meta.js";
 import { loadSessionStore, resolveStorePath } from "../config/sessions.js";
+import { shouldMarkOrchestrationTaskStale } from "../orchestration/maintenance.js";
 import { parseAgentSessionKey } from "../routing/session-key.js";
 import { listTaskAuditFindings, summarizeTaskAuditFindings } from "./task-registry.audit.js";
 import type { TaskAuditSummary } from "./task-registry.audit.js";
@@ -78,14 +79,18 @@ function hasBackingSession(task: TaskRecord): boolean {
   return true;
 }
 
-function shouldMarkLost(task: TaskRecord, now: number): boolean {
+function resolveLostReason(task: TaskRecord, now: number): string | null {
   if (!isActiveTask(task)) {
-    return false;
+    return null;
+  }
+  const stale = shouldMarkOrchestrationTaskStale({ task, now });
+  if (stale.stale) {
+    return stale.reason ?? "orchestration heartbeat stale";
   }
   if (!hasLostGraceExpired(task, now)) {
-    return false;
+    return null;
   }
-  return !hasBackingSession(task);
+  return hasBackingSession(task) ? null : "backing session missing";
 }
 
 function shouldPruneTerminalTask(task: TaskRecord, now: number): boolean {
@@ -108,14 +113,14 @@ function resolveCleanupAfter(task: TaskRecord): number {
   return terminalAt + TASK_RETENTION_MS;
 }
 
-function markTaskLost(task: TaskRecord, now: number): TaskRecord {
+function markTaskLost(task: TaskRecord, now: number, reason: string): TaskRecord {
   const cleanupAfter = task.cleanupAfter ?? projectTaskLost(task, now).cleanupAfter;
   const updated =
     markTaskLostById({
       taskId: task.taskId,
       endedAt: task.endedAt ?? now,
       lastEventAt: now,
-      error: task.error ?? "backing session missing",
+      error: task.error ?? reason,
       cleanupAfter,
     }) ?? task;
   void maybeDeliverTaskTerminalUpdate(updated.taskId);
@@ -140,10 +145,14 @@ function projectTaskLost(task: TaskRecord, now: number): TaskRecord {
 
 export function reconcileTaskRecordForOperatorInspection(task: TaskRecord): TaskRecord {
   const now = Date.now();
-  if (!shouldMarkLost(task, now)) {
+  const lostReason = resolveLostReason(task, now);
+  if (!lostReason) {
     return task;
   }
-  return projectTaskLost(task, now);
+  return {
+    ...projectTaskLost(task, now),
+    error: task.error ?? lostReason,
+  };
 }
 
 export function reconcileInspectableTasks(): TaskRecord[] {
@@ -173,7 +182,7 @@ export function previewTaskRegistryMaintenance(): TaskRegistryMaintenanceSummary
   let cleanupStamped = 0;
   let pruned = 0;
   for (const task of listTaskRecords()) {
-    if (shouldMarkLost(task, now)) {
+    if (resolveLostReason(task, now)) {
       reconciled += 1;
       continue;
     }
@@ -195,8 +204,9 @@ export function runTaskRegistryMaintenance(): TaskRegistryMaintenanceSummary {
   let cleanupStamped = 0;
   let pruned = 0;
   for (const task of listTaskRecords()) {
-    if (shouldMarkLost(task, now)) {
-      const next = markTaskLost(task, now);
+    const lostReason = resolveLostReason(task, now);
+    if (lostReason) {
+      const next = markTaskLost(task, now, lostReason);
       if (next.status === "lost") {
         reconciled += 1;
       }
