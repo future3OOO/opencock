@@ -5,6 +5,7 @@ import {
   type SessionEntry,
 } from "../config/sessions.js";
 import { loadSessionEntry } from "../gateway/session-utils.js";
+import { buildMissionContinuityCapsule } from "./continuity-capsule.js";
 
 export type SessionMissionBinding = {
   activeMissionId: string | null;
@@ -21,6 +22,19 @@ export function readSessionMissionBinding(entry?: SessionEntry | null): SessionM
     activeMissionId: normalizeOptionalText(entry?.activeMissionId),
     focusedWorkerId: normalizeOptionalText(entry?.focusedWorkerId),
   };
+}
+
+function resolveRecentMissionIds(entry?: SessionEntry | null): string[] {
+  const recentFromEvents = Array.isArray(entry?.recentMissionEvents)
+    ? entry.recentMissionEvents.map((event) => event?.missionId).filter(Boolean)
+    : [];
+  if (recentFromEvents.length > 0) {
+    return recentFromEvents;
+  }
+  const recentFromCapsule = Array.isArray(entry?.continuityCapsule?.recentMissionIds)
+    ? entry.continuityCapsule.recentMissionIds
+    : [];
+  return recentFromCapsule.filter(Boolean);
 }
 
 export async function setSessionMissionBinding(params: {
@@ -45,16 +59,23 @@ export async function setSessionMissionBinding(params: {
     ) {
       return existing ?? null;
     }
+    const updatedAt = Date.now();
     store[resolved.normalizedKey] = mergeSessionEntry(existing, {
       activeMissionId: missionId,
       focusedWorkerId: workerId,
       ...(continuitySummary != null
         ? {
             continuitySummary,
-            continuityUpdatedAt: Date.now(),
+            continuityUpdatedAt: updatedAt,
           }
         : {}),
-      updatedAt: Date.now(),
+      continuityCapsule: buildMissionContinuityCapsule({
+        updatedAt,
+        summary: continuitySummary ?? existing?.continuitySummary ?? null,
+        activeMissionIds: missionId ? [missionId] : [],
+        recentMissionIds: resolveRecentMissionIds(existing),
+      }),
+      updatedAt,
     });
     for (const legacyKey of resolved.legacyKeys) {
       if (legacyKey !== resolved.normalizedKey) {
@@ -86,10 +107,17 @@ export async function clearSessionMissionBindingIfMatches(params: {
       return existing ?? null;
     }
     cleared = true;
+    const updatedAt = Date.now();
     store[resolved.normalizedKey] = mergeSessionEntry(existing, {
       activeMissionId: null,
       focusedWorkerId: null,
-      updatedAt: Date.now(),
+      continuityCapsule: buildMissionContinuityCapsule({
+        updatedAt,
+        summary: existing?.continuitySummary ?? null,
+        activeMissionIds: [],
+        recentMissionIds: resolveRecentMissionIds(existing),
+      }),
+      updatedAt,
     });
     for (const legacyKey of resolved.legacyKeys) {
       if (legacyKey !== resolved.normalizedKey) {

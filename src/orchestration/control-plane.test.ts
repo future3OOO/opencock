@@ -127,6 +127,9 @@ describe("orchestration control plane", () => {
         activeMissionId: "mission-source-20",
         focusedWorkerId: "worker-source-20",
         workerNoticeCount: 1,
+        continuityCapsule: expect.objectContaining({
+          activeMissionIds: ["mission-source-20"],
+        }),
       });
     });
   });
@@ -210,6 +213,9 @@ describe("orchestration control plane", () => {
         expect(readPendingMissionNotificationRecords(entry)).toHaveLength(1);
         expect(entry?.activeMissionId ?? null).toBeNull();
         expect(entry?.focusedWorkerId ?? null).toBeNull();
+        expect(entry?.continuityCapsule).toMatchObject({
+          recentMissionIds: ["mission-source-21"],
+        });
       });
     });
   });

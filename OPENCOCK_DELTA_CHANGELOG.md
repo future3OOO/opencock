@@ -204,9 +204,45 @@ Why this fork-only:
 - the live system’s broader orchestration bridge was still authoritative in workspace Python under `dispatch.py` / `dispatch_bridge.py`
 - this slice moves the generic engine lifecycle into maintained fork source while leaving tenant-specific autoresearch and Instagram policy in the workspace for now
 
+#### Reconciled orchestration task view and runtime continuity capsule slice
+
+Moved another chunk of generic worker-registry/session-store authority out of workspace Python and into OpenCock source.
+
+- Added source-owned continuity capsule builder in:
+  - `src/orchestration/continuity-capsule.ts`
+- Extended runtime session schema and mission-binding logic in:
+  - `src/config/sessions/types.ts`
+  - `src/orchestration/session-state.ts`
+  - `src/tasks/task-registry-mission-runtime.ts`
+  - `src/tasks/task-registry-mission-runtime.test.ts`
+- Switched orchestration read paths onto the reconciled native task view in:
+  - `src/orchestration/control-plane.shared.ts`
+  - `src/orchestration/control-plane.lifecycle.ts`
+  - `src/orchestration/service.ts`
+  - `src/orchestration/service.test.ts`
+  - `src/orchestration/control-plane.test.ts`
+
+Behavior change:
+
+- session records now carry a source-owned `continuityCapsule` alongside:
+  - `continuitySummary`
+  - `activeMissionId`
+  - `focusedWorkerId`
+  - `lastDeliveredMission`
+  - `recentMissionEvents`
+- mission binding and terminal mission projection update that continuity capsule in source instead of leaving it to the Python session-store adapter
+- native orchestration `status`, `list`, duplicate suppression, and mission lookup now read through the reconciled task view
+- missing child sessions now degrade to `lost` in orchestration status/list flows without relying on the old Python `worker_registry.py` cleanup loop
+
+Why this fork-only:
+
+- the live system still depended on workspace Python to reconcile missing child sessions and to build one of the key continuity fields used by the direct-session orchestration layer
+- this slice moves those generic engine responsibilities into maintained fork source and shrinks the remaining Python layer toward policy/compatibility only
+
 #### Validation
 
 - Focused tests:
   - `pnpm exec vitest run src/orchestration/control-plane.test.ts src/orchestration/service.test.ts src/cli/program/register.orchestrator.test.ts src/tasks/task-registry-mission-runtime.test.ts`
+  - `pnpm exec vitest run src/orchestration/service.test.ts src/orchestration/control-plane.test.ts src/tasks/task-registry-mission-runtime.test.ts src/cli/program/register.orchestrator.test.ts src/tasks/task-registry.test.ts`
 - Build:
   - `pnpm build`

@@ -3,14 +3,14 @@ import { loadConfig } from "../config/config.js";
 import { updateSessionStoreEntry } from "../config/sessions.js";
 import { loadSessionEntry } from "../gateway/session-utils.js";
 import { parseAgentSessionKey } from "../routing/session-key.js";
-import {
-  cancelTaskById,
-  findTaskBySourceId,
-  listTaskRecords,
-  listTasksForOrchestrationSuppressionKey,
-} from "../tasks/task-registry.js";
-import type { TaskRecord } from "../tasks/task-registry.types.js";
+import { cancelTaskById } from "../tasks/task-registry.js";
 import { deliveryContextFromSession } from "../utils/delivery-context.js";
+import {
+  listInspectableOrchestratedTasks,
+  listInspectableTasksForSuppressionKey,
+  resolveMissionTask,
+  resolveSpawnSurface,
+} from "./control-plane.shared.js";
 import {
   buildCompactReceipt,
   buildWorkerTask,
@@ -26,7 +26,6 @@ import {
   DEFAULT_ORCHESTRATION_SPAWN_COOLDOWN_SECONDS,
   findSuppressedOrchestrationTask,
   isDirectOrchestratorSessionKey,
-  isOrchestratedMissionTask,
 } from "./runtime-primitives.js";
 import { readSessionMissionBinding, setSessionMissionBinding } from "./session-state.js";
 
@@ -89,32 +88,14 @@ function deriveDirectDeliveryContextFromSessionKey(sessionKey: string) {
   };
 }
 
-function resolveSpawnSurface(taskSurface: string | undefined, sessionKey: string): string {
+function resolveEffectiveSpawnSurface(taskSurface: string | undefined, sessionKey: string): string {
   const normalized = normalizeOptionalText(taskSurface);
   if (normalized) {
     return normalized;
   }
-  return deriveDirectDeliveryContextFromSessionKey(sessionKey)?.channel ?? "general";
-}
-
-function findMissionTaskForSession(sessionKey: string, missionId?: string): TaskRecord | undefined {
-  if (missionId?.trim()) {
-    const task = findTaskBySourceId(missionId.trim());
-    return task && isOrchestratedMissionTask(task) ? task : undefined;
-  }
-  const loaded = loadSessionEntry(sessionKey);
-  const binding = readSessionMissionBinding(loaded.entry);
-  if (binding.activeMissionId) {
-    const task = findTaskBySourceId(binding.activeMissionId);
-    if (task && isOrchestratedMissionTask(task)) {
-      return task;
-    }
-  }
-  return listTaskRecords().find(
-    (task) =>
-      isOrchestratedMissionTask(task) &&
-      task.requesterSessionKey === loaded.canonicalKey &&
-      task.status === "running",
+  return resolveSpawnSurface(
+    deriveDirectDeliveryContextFromSessionKey(sessionKey)?.channel,
+    sessionKey,
   );
 }
 
@@ -156,7 +137,7 @@ export async function delegateFromSession(params: DelegateParams) {
   const delivery =
     deliveryContextFromSession(loaded.entry) ??
     deriveDirectDeliveryContextFromSessionKey(canonicalSessionKey);
-  const surface = resolveSpawnSurface(params.surface, canonicalSessionKey);
+  const surface = resolveEffectiveSpawnSurface(params.surface, canonicalSessionKey);
   const missionLabel = buildOrchestrationMissionLabel({
     routingClass,
     sourceText: statusSummary,
@@ -170,9 +151,10 @@ export async function delegateFromSession(params: DelegateParams) {
   });
   const suppression = findSuppressedOrchestrationTask({
     suppressionKey,
-    tasks: listTasksForOrchestrationSuppressionKey(suppressionKey).filter(
-      (task) => task.requesterSessionKey === canonicalSessionKey,
-    ),
+    tasks: listInspectableTasksForSuppressionKey({
+      sessionKey: canonicalSessionKey,
+      suppressionKey,
+    }),
     cooldownSeconds: DEFAULT_ORCHESTRATION_SPAWN_COOLDOWN_SECONDS,
   });
   if (suppression.suppress && suppression.task) {
@@ -318,13 +300,13 @@ export async function statusFromSession(params: { sessionKey: string; missionId?
       error: "Missing session key. Set OPENCLAW_SESSION_KEY.",
     };
   }
-  const target = findMissionTaskForSession(sessionKey, params.missionId);
+  const target = resolveMissionTask(sessionKey, params.missionId);
   if (target) {
     return buildOrchestrationMissionStatus(target);
   }
   const loaded = loadSessionEntry(sessionKey);
-  const sessionTasks = listTaskRecords().filter(
-    (task) => isOrchestratedMissionTask(task) && task.requesterSessionKey === loaded.canonicalKey,
+  const sessionTasks = listInspectableOrchestratedTasks().filter(
+    (task) => task.requesterSessionKey === loaded.canonicalKey,
   );
   const active = sessionTasks.filter((task) => task.status === "running");
   if (active.length > 1) {
@@ -368,8 +350,7 @@ export async function listMissionsFromSession(params: {
     };
   }
   const loaded = loadSessionEntry(sessionKey);
-  const missions = listTaskRecords()
-    .filter((task) => isOrchestratedMissionTask(task))
+  const missions = listInspectableOrchestratedTasks()
     .filter((task) =>
       params.allDirectSessions
         ? isDirectOrchestratorSessionKey(task.requesterSessionKey)
@@ -399,7 +380,7 @@ export async function cancelMissionFromSession(params: {
       error: "Missing session key. Set OPENCLAW_SESSION_KEY.",
     };
   }
-  const task = findMissionTaskForSession(sessionKey, params.missionId);
+  const task = resolveMissionTask(sessionKey, params.missionId);
   if (!task) {
     return {
       action: "error" as const,

@@ -1,9 +1,8 @@
 import { loadSessionEntry } from "../gateway/session-utils.js";
 import {
-  findTaskBySourceId,
-  listTaskRecords,
-  listTasksForOrchestrationSuppressionKey,
-} from "../tasks/task-registry.js";
+  reconcileInspectableTasks,
+  reconcileTaskLookupToken,
+} from "../tasks/task-registry.reconcile.js";
 import type { TaskDeliveryStatus, TaskRecord } from "../tasks/task-registry.types.js";
 import { buildCompactReceipt, buildWorkerTask, normalizeOptionalText } from "./format.js";
 import {
@@ -40,22 +39,38 @@ function makeId(prefix: string, label: string, maxSlug = 40): string {
 export function resolveMissionTask(sessionKey: string, missionId?: string): TaskRecord | undefined {
   const normalizedMissionId = normalizeOptionalText(missionId);
   if (normalizedMissionId) {
-    const task = findTaskBySourceId(normalizedMissionId);
+    const task = reconcileTaskLookupToken(normalizedMissionId);
     return task && isOrchestratedMissionTask(task) ? task : undefined;
   }
   const loaded = loadSessionEntry(sessionKey);
   const binding = readSessionMissionBinding(loaded.entry);
   if (binding.activeMissionId) {
-    const task = findTaskBySourceId(binding.activeMissionId);
+    const task = reconcileTaskLookupToken(binding.activeMissionId);
     if (task && isOrchestratedMissionTask(task)) {
       return task;
     }
   }
-  return listTaskRecords().find(
+  return listInspectableOrchestratedTasks().find(
+    (task) => task.requesterSessionKey === loaded.canonicalKey && task.status === "running",
+  );
+}
+
+export function listInspectableOrchestratedTasks(): TaskRecord[] {
+  return reconcileInspectableTasks().filter((task) => isOrchestratedMissionTask(task));
+}
+
+export function listInspectableTasksForSuppressionKey(params: {
+  sessionKey: string;
+  suppressionKey: string;
+}): TaskRecord[] {
+  const suppressionKey = normalizeOptionalText(params.suppressionKey);
+  if (!suppressionKey) {
+    return [];
+  }
+  return listInspectableOrchestratedTasks().filter(
     (task) =>
-      isOrchestratedMissionTask(task) &&
-      task.requesterSessionKey === loaded.canonicalKey &&
-      task.status === "running",
+      task.requesterSessionKey === params.sessionKey &&
+      task.orchestrationSuppressionKey?.trim() === suppressionKey,
   );
 }
 
@@ -142,9 +157,10 @@ export function buildPreparedDelegatePlan(params: {
   });
   const suppression = findSuppressedOrchestrationTask({
     suppressionKey,
-    tasks: listTasksForOrchestrationSuppressionKey(suppressionKey).filter(
-      (task) => task.requesterSessionKey === params.sessionKey,
-    ),
+    tasks: listInspectableTasksForSuppressionKey({
+      sessionKey: params.sessionKey,
+      suppressionKey,
+    }),
     cooldownSeconds: DEFAULT_ORCHESTRATION_SPAWN_COOLDOWN_SECONDS,
   });
   if (suppression.suppress && suppression.task) {

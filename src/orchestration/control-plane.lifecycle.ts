@@ -7,16 +7,15 @@ import {
   recordTaskRunProgressByRunId,
   setDetachedTaskDeliveryStatusByRunId,
 } from "../tasks/task-executor.js";
-import {
-  findTaskBySourceId,
-  listTasksForOrchestrationSuppressionKey,
-} from "../tasks/task-registry.js";
+import { findTaskBySourceId } from "../tasks/task-registry.js";
 import {
   delegateRejected,
+  resolveMissionTask,
   mapDeliveryStateToTaskDeliveryStatus,
   mapMissionStateToTaskStatus,
   resolveMissionRunId,
   resolveSpawnSurface,
+  listInspectableTasksForSuppressionKey,
 } from "./control-plane.shared.js";
 import { buildCompactCompletion, buildCompactReceipt, normalizeOptionalText } from "./format.js";
 import {
@@ -60,9 +59,10 @@ export async function commitDelegatedWorkerFromSession(params: {
   if (suppressionKey) {
     const suppression = findSuppressedOrchestrationTask({
       suppressionKey,
-      tasks: listTasksForOrchestrationSuppressionKey(suppressionKey).filter(
-        (task) => task.requesterSessionKey === canonicalSessionKey,
-      ),
+      tasks: listInspectableTasksForSuppressionKey({
+        sessionKey: canonicalSessionKey,
+        suppressionKey,
+      }),
       cooldownSeconds: DEFAULT_ORCHESTRATION_SPAWN_COOLDOWN_SECONDS,
     });
     if (suppression.suppress && suppression.task) {
@@ -316,7 +316,7 @@ export async function queryMissionStatusFromSession(params: { missionId: string 
       replyText: "No mission id supplied.",
     };
   }
-  const task = findTaskBySourceId(missionId);
+  const task = resolveMissionTask("", missionId);
   if (!task || !isOrchestratedMissionTask(task)) {
     return {
       found: false,
