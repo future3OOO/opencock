@@ -15,6 +15,7 @@ type TaskRegistryRow = {
   orchestration_surface: string | null;
   orchestration_status_summary: string | null;
   orchestration_suppression_key: string | null;
+  orchestration_mutation_targets_json: string | null;
   requester_session_key: string;
   parent_flow_id: string | null;
   child_session_key: string | null;
@@ -92,6 +93,9 @@ function rowToTaskRecord(row: TaskRegistryRow): TaskRecord {
   const endedAt = normalizeNumber(row.ended_at);
   const lastEventAt = normalizeNumber(row.last_event_at);
   const cleanupAfter = normalizeNumber(row.cleanup_after);
+  const orchestrationMutationTargets = parseJsonValue<string[]>(
+    row.orchestration_mutation_targets_json,
+  );
   return {
     taskId: row.task_id,
     runtime: row.runtime,
@@ -106,6 +110,9 @@ function rowToTaskRecord(row: TaskRegistryRow): TaskRecord {
       : {}),
     ...(row.orchestration_suppression_key
       ? { orchestrationSuppressionKey: row.orchestration_suppression_key }
+      : {}),
+    ...(Array.isArray(orchestrationMutationTargets) && orchestrationMutationTargets.length > 0
+      ? { orchestrationMutationTargets }
       : {}),
     requesterSessionKey: row.requester_session_key,
     ...(row.parent_flow_id ? { parentFlowId: row.parent_flow_id } : {}),
@@ -150,6 +157,7 @@ function bindTaskRecord(record: TaskRecord) {
     orchestration_surface: record.orchestrationSurface ?? null,
     orchestration_status_summary: record.orchestrationStatusSummary ?? null,
     orchestration_suppression_key: record.orchestrationSuppressionKey ?? null,
+    orchestration_mutation_targets_json: serializeJson(record.orchestrationMutationTargets),
     requester_session_key: record.requesterSessionKey,
     parent_flow_id: record.parentFlowId ?? null,
     child_session_key: record.childSessionKey ?? null,
@@ -193,6 +201,7 @@ function createStatements(db: DatabaseSync): TaskRegistryStatements {
         orchestration_surface,
         orchestration_status_summary,
         orchestration_suppression_key,
+        orchestration_mutation_targets_json,
         requester_session_key,
         parent_flow_id,
         child_session_key,
@@ -234,6 +243,7 @@ function createStatements(db: DatabaseSync): TaskRegistryStatements {
         orchestration_surface,
         orchestration_status_summary,
         orchestration_suppression_key,
+        orchestration_mutation_targets_json,
         requester_session_key,
         parent_flow_id,
         child_session_key,
@@ -263,6 +273,7 @@ function createStatements(db: DatabaseSync): TaskRegistryStatements {
         @orchestration_surface,
         @orchestration_status_summary,
         @orchestration_suppression_key,
+        @orchestration_mutation_targets_json,
         @requester_session_key,
         @parent_flow_id,
         @child_session_key,
@@ -292,6 +303,7 @@ function createStatements(db: DatabaseSync): TaskRegistryStatements {
         orchestration_surface = excluded.orchestration_surface,
         orchestration_status_summary = excluded.orchestration_status_summary,
         orchestration_suppression_key = excluded.orchestration_suppression_key,
+        orchestration_mutation_targets_json = excluded.orchestration_mutation_targets_json,
         requester_session_key = excluded.requester_session_key,
         parent_flow_id = excluded.parent_flow_id,
         child_session_key = excluded.child_session_key,
@@ -342,6 +354,7 @@ function ensureSchema(db: DatabaseSync) {
       orchestration_surface TEXT,
       orchestration_status_summary TEXT,
       orchestration_suppression_key TEXT,
+      orchestration_mutation_targets_json TEXT,
       requester_session_key TEXT NOT NULL,
       parent_flow_id TEXT,
       child_session_key TEXT,
@@ -379,6 +392,7 @@ function ensureSchema(db: DatabaseSync) {
   ensureColumn(db, "task_runs", "orchestration_surface", "TEXT");
   ensureColumn(db, "task_runs", "orchestration_status_summary", "TEXT");
   ensureColumn(db, "task_runs", "orchestration_suppression_key", "TEXT");
+  ensureColumn(db, "task_runs", "orchestration_mutation_targets_json", "TEXT");
   db.exec(`CREATE INDEX IF NOT EXISTS idx_task_runs_status ON task_runs(status);`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_task_runs_runtime_status ON task_runs(runtime, status);`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_task_runs_cleanup_after ON task_runs(cleanup_after);`);

@@ -58,6 +58,7 @@ export type TaskRecord = {
   orchestrationSurface?: string;
   orchestrationStatusSummary?: string;
   orchestrationSuppressionKey?: string;
+  orchestrationMutationTargets?: string[];
   requesterSessionKey: string;
   parentFlowId?: string;
   childSessionKey?: string;

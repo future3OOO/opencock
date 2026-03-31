@@ -578,6 +578,7 @@ export function registerSubagentRun(params: {
   orchestrationSurface?: string;
   orchestrationStatusSummary?: string;
   orchestrationSuppressionKey?: string;
+  orchestrationMutationTargets?: string[];
   childSessionKey: string;
   controllerSessionKey?: string;
   requesterSessionKey: string;

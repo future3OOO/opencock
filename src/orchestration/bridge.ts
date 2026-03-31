@@ -100,6 +100,7 @@ export async function runOrchestrationBridgeCommand(
         statusSummary: stringValue(payload, "statusSummary"),
         surface: optionalStringValue(payload, "surface"),
         toolNeeds: stringArrayValue(payload, "toolNeeds"),
+        mutationTargets: stringArrayValue(payload, "mutationTargets"),
         timeoutSeconds: integerValue(payload, "runTimeoutSeconds"),
       });
     case "commit":
@@ -114,6 +115,7 @@ export async function runOrchestrationBridgeCommand(
         processSessionId: optionalStringValue(payload, "processSessionId"),
         suppressionKey: optionalStringValue(payload, "suppressionKey"),
         statusSummary: optionalStringValue(payload, "statusSummary"),
+        mutationTargets: stringArrayValue(payload, "mutationTargets"),
       });
     case "complete":
       return await completeMissionFromSession({

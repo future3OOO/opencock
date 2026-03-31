@@ -214,6 +214,7 @@ describe("registerOrchestratorCommand", () => {
           statusSummary: "porting orchestration bridge",
           surface: "whatsapp",
           toolNeeds: ["rg", "apply_patch"],
+          mutationTargets: ["skills/clawbot-autoresearch/scripts/dispatch.py"],
           runTimeoutSeconds: 900,
         }),
       ]);
@@ -224,6 +225,7 @@ describe("registerOrchestratorCommand", () => {
         statusSummary: "porting orchestration bridge",
         surface: "whatsapp",
         toolNeeds: ["rg", "apply_patch"],
+        mutationTargets: ["skills/clawbot-autoresearch/scripts/dispatch.py"],
         timeoutSeconds: 900,
       });
     } finally {

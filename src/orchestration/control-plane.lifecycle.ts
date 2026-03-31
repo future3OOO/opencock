@@ -38,6 +38,7 @@ export async function commitDelegatedWorkerFromSession(params: {
   processSessionId?: string | null;
   suppressionKey?: string | null;
   statusSummary?: string | null;
+  mutationTargets?: string[];
 }) {
   const sessionKey = normalizeOptionalText(params.sessionKey);
   const missionId = normalizeOptionalText(params.missionId);
@@ -110,6 +111,7 @@ export async function commitDelegatedWorkerFromSession(params: {
           orchestrationStatusSummary:
             normalizeOptionalText(params.statusSummary) ?? `dispatched: ${routingClass}`,
           orchestrationSuppressionKey: suppressionKey,
+          orchestrationMutationTargets: params.mutationTargets,
           requesterSessionKey: canonicalSessionKey,
           childSessionKey: normalizeOptionalText(params.workerSessionKey),
           runId,

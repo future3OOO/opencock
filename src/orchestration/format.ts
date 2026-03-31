@@ -41,9 +41,13 @@ export function buildWorkerTask(params: {
   sessionKey: string;
   surface: string;
   toolNeeds?: string[];
+  mutationTargets?: string[];
 }): string {
   const toolNeeds = Array.isArray(params.toolNeeds)
     ? params.toolNeeds.map((item) => item.trim()).filter(Boolean)
+    : [];
+  const mutationTargets = Array.isArray(params.mutationTargets)
+    ? params.mutationTargets.map((item) => item.trim()).filter(Boolean)
     : [];
   const guidanceLines =
     params.routingClass === "self-improvement"
@@ -64,10 +68,14 @@ export function buildWorkerTask(params: {
     toolNeeds.length > 0
       ? ` Preferred tools or skills: ${Array.from(new Set(toolNeeds)).toSorted().join(", ")}.`
       : "";
+  const mutationTargetClause =
+    mutationTargets.length > 0
+      ? ` Mutation targets: ${Array.from(new Set(mutationTargets)).toSorted().join(", ")}.`
+      : "";
   return (
     `Mission ${params.missionId}. Routing class: ${params.routingClass}. Surface: ${params.surface}. ` +
     `Parent session: ${params.sessionKey}. Carry out the user's request in this dedicated ` +
-    `worker session and report back with concrete results.${toolClause}\n\n` +
+    `worker session and report back with concrete results.${toolClause}${mutationTargetClause}\n\n` +
     `${guidanceLines.join("\n")}\n\n` +
     `User request:\n${params.task.trim()}`
   );

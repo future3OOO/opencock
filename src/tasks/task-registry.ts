@@ -471,6 +471,7 @@ function mergeExistingTaskForCreate(
     orchestrationSurface?: string;
     orchestrationStatusSummary?: string;
     orchestrationSuppressionKey?: string;
+    orchestrationMutationTargets?: string[];
     parentFlowId?: string;
     parentTaskId?: string;
     agentId?: string;
@@ -482,6 +483,11 @@ function mergeExistingTaskForCreate(
   },
 ): TaskRecord {
   const patch: Partial<TaskRecord> = {};
+  const normalizedMutationTargets = Array.isArray(params.orchestrationMutationTargets)
+    ? Array.from(
+        new Set(params.orchestrationMutationTargets.map((target) => target.trim()).filter(Boolean)),
+      )
+    : [];
   const requesterOrigin = normalizeDeliveryContext(params.requesterOrigin);
   const currentDeliveryState = taskDeliveryStates.get(existing.taskId);
   if (requesterOrigin && !currentDeliveryState?.requesterOrigin) {
@@ -508,6 +514,13 @@ function mergeExistingTaskForCreate(
   }
   if (params.orchestrationSuppressionKey?.trim() && !existing.orchestrationSuppressionKey?.trim()) {
     patch.orchestrationSuppressionKey = params.orchestrationSuppressionKey.trim();
+  }
+  if (
+    normalizedMutationTargets.length > 0 &&
+    (!Array.isArray(existing.orchestrationMutationTargets) ||
+      existing.orchestrationMutationTargets.length === 0)
+  ) {
+    patch.orchestrationMutationTargets = normalizedMutationTargets;
   }
   if (params.parentFlowId?.trim() && !existing.parentFlowId?.trim()) {
     patch.parentFlowId = params.parentFlowId.trim();
@@ -1101,6 +1114,7 @@ export function createTaskRecord(params: {
   orchestrationSurface?: string;
   orchestrationStatusSummary?: string;
   orchestrationSuppressionKey?: string;
+  orchestrationMutationTargets?: string[];
   requesterSessionKey: string;
   requesterOrigin?: TaskDeliveryState["requesterOrigin"];
   parentFlowId?: string;
@@ -1136,6 +1150,11 @@ export function createTaskRecord(params: {
     requesterSessionKey: params.requesterSessionKey,
   });
   const lastEventAt = params.lastEventAt ?? params.startedAt ?? now;
+  const orchestrationMutationTargets = Array.isArray(params.orchestrationMutationTargets)
+    ? Array.from(
+        new Set(params.orchestrationMutationTargets.map((target) => target.trim()).filter(Boolean)),
+      )
+    : [];
   const record: TaskRecord = {
     taskId,
     runtime: params.runtime,
@@ -1145,6 +1164,8 @@ export function createTaskRecord(params: {
     orchestrationSurface: params.orchestrationSurface?.trim() || undefined,
     orchestrationStatusSummary: normalizeTaskSummary(params.orchestrationStatusSummary),
     orchestrationSuppressionKey: params.orchestrationSuppressionKey?.trim() || undefined,
+    orchestrationMutationTargets:
+      orchestrationMutationTargets.length > 0 ? orchestrationMutationTargets : undefined,
     requesterSessionKey: params.requesterSessionKey,
     parentFlowId: params.parentFlowId?.trim() || undefined,
     childSessionKey: params.childSessionKey,
