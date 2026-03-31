@@ -7,6 +7,7 @@ const commitDelegatedWorkerFromSessionMock = vi.fn();
 const completeMissionFromSessionMock = vi.fn();
 const heartbeatMissionFromSessionMock = vi.fn();
 const queryMissionStatusFromSessionMock = vi.fn();
+const querySessionStatusFromSessionMock = vi.fn();
 const delegateFromSessionMock = vi.fn();
 const delegateManyFromSessionMock = vi.fn();
 const listMissionsFromSessionMock = vi.fn();
@@ -23,7 +24,7 @@ vi.mock("../../orchestration/control-plane.js", () => ({
   completeMissionFromSession: (...args: unknown[]) => completeMissionFromSessionMock(...args),
   heartbeatMissionFromSession: (...args: unknown[]) => heartbeatMissionFromSessionMock(...args),
   queryMissionStatusFromSession: (...args: unknown[]) => queryMissionStatusFromSessionMock(...args),
-  querySessionStatusFromSession: vi.fn(),
+  querySessionStatusFromSession: (...args: unknown[]) => querySessionStatusFromSessionMock(...args),
   listOrchestratorMissionsFromSession: vi.fn(),
 }));
 
@@ -54,6 +55,7 @@ describe("registerOrchestratorCommand", () => {
     completeMissionFromSessionMock.mockReset();
     heartbeatMissionFromSessionMock.mockReset();
     queryMissionStatusFromSessionMock.mockReset();
+    querySessionStatusFromSessionMock.mockReset();
     delegateFromSessionMock.mockReset();
     delegateManyFromSessionMock.mockReset();
     listMissionsFromSessionMock.mockReset();
@@ -80,6 +82,7 @@ describe("registerOrchestratorCommand", () => {
       "list",
       "cancel",
       "query-status",
+      "bridge",
     ]);
   });
 
@@ -175,6 +178,85 @@ describe("registerOrchestratorCommand", () => {
       } else {
         process.env.OPENCLAW_SESSION_KEY = prevEnv;
       }
+      process.exitCode = prevExit;
+      stdout.mockRestore();
+    }
+  });
+
+  it("routes bridge delegate payloads into the native delegate-explicit control plane", async () => {
+    const { registerOrchestratorCommand } = await import("./register.orchestrator.js");
+    delegateExplicitRequestFromSessionMock.mockResolvedValue({
+      status: "accepted",
+      action: "delegate",
+      missionId: "m-bridge",
+      workerId: "w-bridge",
+    });
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const prevExit = process.exitCode;
+    process.exitCode = undefined;
+    try {
+      const program = new Command();
+      registerOrchestratorCommand(program);
+      await program.parseAsync([
+        "node",
+        "openclaw",
+        "orchestrator",
+        "bridge",
+        "delegate",
+        "--payload-json",
+        JSON.stringify({
+          sessionKey: "agent:main:main",
+          routingClass: "coding",
+          task: "Move the legacy bridge into runtime",
+          statusSummary: "porting orchestration bridge",
+          surface: "whatsapp",
+          toolNeeds: ["rg", "apply_patch"],
+          runTimeoutSeconds: 900,
+        }),
+      ]);
+      expect(delegateExplicitRequestFromSessionMock).toHaveBeenCalledWith({
+        sessionKey: "agent:main:main",
+        routingClass: "coding",
+        task: "Move the legacy bridge into runtime",
+        statusSummary: "porting orchestration bridge",
+        surface: "whatsapp",
+        toolNeeds: ["rg", "apply_patch"],
+        timeoutSeconds: 900,
+      });
+    } finally {
+      process.exitCode = prevExit;
+      stdout.mockRestore();
+    }
+  });
+
+  it("routes bridge status payloads without a mission id into the session-status control plane", async () => {
+    const { registerOrchestratorCommand } = await import("./register.orchestrator.js");
+    querySessionStatusFromSessionMock.mockResolvedValue({
+      found: false,
+      missionId: null,
+      state: null,
+    });
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const prevExit = process.exitCode;
+    process.exitCode = undefined;
+    try {
+      const program = new Command();
+      registerOrchestratorCommand(program);
+      await program.parseAsync([
+        "node",
+        "openclaw",
+        "orchestrator",
+        "bridge",
+        "status",
+        "--payload-json",
+        JSON.stringify({
+          sessionKey: "agent:main:whatsapp:direct:+64270000000",
+        }),
+      ]);
+      expect(querySessionStatusFromSessionMock).toHaveBeenCalledWith({
+        sessionKey: "agent:main:whatsapp:direct:+64270000000",
+      });
+    } finally {
       process.exitCode = prevExit;
       stdout.mockRestore();
     }
