@@ -205,3 +205,10 @@ export function buildPreparedDelegatePlan(params: {
     replyText: buildCompactReceipt(missionId, workerId, params.routingClass),
   };
 }
+
+export type PreparedDelegatePlan = ReturnType<typeof buildPreparedDelegatePlan>;
+export type AcceptedPreparedDelegatePlan = Extract<PreparedDelegatePlan, { action: "delegate" }>;
+export type SuppressedPreparedDelegatePlan = Extract<
+  PreparedDelegatePlan,
+  { action: "suppressed" }
+>;

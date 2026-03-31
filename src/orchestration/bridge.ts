@@ -8,9 +8,10 @@ import {
   queryMissionStatusFromSession,
   querySessionStatusFromSession,
 } from "./control-plane.js";
-import { cancelMissionFromSession } from "./service.js";
+import { cancelMissionFromSession, dispatchRequestFromSession } from "./service.js";
 
 export const ORCHESTRATION_BRIDGE_COMMANDS = [
+  "dispatch",
   "prepare",
   "delegate",
   "commit",
@@ -68,6 +69,17 @@ export async function runOrchestrationBridgeCommand(
   payload: BridgePayload,
 ) {
   switch (command) {
+    case "dispatch":
+      return await dispatchRequestFromSession({
+        text: stringValue(payload, "text"),
+        sessionKey: stringValue(payload, "sessionKey"),
+        surface: optionalStringValue(payload, "surface"),
+        hasBrowserNeed: booleanValue(payload, "hasBrowserNeed"),
+        hasRepoMutation: booleanValue(payload, "hasRepoMutation"),
+        hasTimedCommitment: booleanValue(payload, "hasTimedCommitment"),
+        toolNeeds: stringArrayValue(payload, "toolNeeds"),
+        isMultiStep: booleanValue(payload, "isMultiStep"),
+      });
     case "prepare":
       return await prepareDispatchRequestFromSession({
         text: stringValue(payload, "text"),

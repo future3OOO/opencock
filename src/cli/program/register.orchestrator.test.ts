@@ -9,6 +9,7 @@ const heartbeatMissionFromSessionMock = vi.fn();
 const queryMissionStatusFromSessionMock = vi.fn();
 const querySessionStatusFromSessionMock = vi.fn();
 const delegateFromSessionMock = vi.fn();
+const dispatchRequestFromSessionMock = vi.fn();
 const delegateManyFromSessionMock = vi.fn();
 const listMissionsFromSessionMock = vi.fn();
 const statusFromSessionMock = vi.fn();
@@ -41,6 +42,7 @@ vi.mock("../../orchestration/service.js", () => ({
     "self-improvement",
   ],
   delegateFromSession: (...args: unknown[]) => delegateFromSessionMock(...args),
+  dispatchRequestFromSession: (...args: unknown[]) => dispatchRequestFromSessionMock(...args),
   delegateManyFromSession: (...args: unknown[]) => delegateManyFromSessionMock(...args),
   listMissionsFromSession: (...args: unknown[]) => listMissionsFromSessionMock(...args),
   statusFromSession: (...args: unknown[]) => statusFromSessionMock(...args),
@@ -57,6 +59,7 @@ describe("registerOrchestratorCommand", () => {
     queryMissionStatusFromSessionMock.mockReset();
     querySessionStatusFromSessionMock.mockReset();
     delegateFromSessionMock.mockReset();
+    dispatchRequestFromSessionMock.mockReset();
     delegateManyFromSessionMock.mockReset();
     listMissionsFromSessionMock.mockReset();
     statusFromSessionMock.mockReset();
@@ -222,6 +225,51 @@ describe("registerOrchestratorCommand", () => {
         surface: "whatsapp",
         toolNeeds: ["rg", "apply_patch"],
         timeoutSeconds: 900,
+      });
+    } finally {
+      process.exitCode = prevExit;
+      stdout.mockRestore();
+    }
+  });
+
+  it("routes bridge dispatch payloads into the native combined ingress path", async () => {
+    const { registerOrchestratorCommand } = await import("./register.orchestrator.js");
+    dispatchRequestFromSessionMock.mockResolvedValue({
+      status: "accepted",
+      action: "delegate",
+      missionId: "m-dispatch",
+      workerId: "w-dispatch",
+    });
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const prevExit = process.exitCode;
+    process.exitCode = undefined;
+    try {
+      const program = new Command();
+      registerOrchestratorCommand(program);
+      await program.parseAsync([
+        "node",
+        "openclaw",
+        "orchestrator",
+        "bridge",
+        "dispatch",
+        "--payload-json",
+        JSON.stringify({
+          sessionKey: "agent:main:whatsapp:direct:+64270000000",
+          text: "Implement the remaining native orchestration ingress",
+          hasRepoMutation: true,
+          toolNeeds: ["rg", "apply_patch"],
+          isMultiStep: true,
+        }),
+      ]);
+      expect(dispatchRequestFromSessionMock).toHaveBeenCalledWith({
+        sessionKey: "agent:main:whatsapp:direct:+64270000000",
+        text: "Implement the remaining native orchestration ingress",
+        hasBrowserNeed: false,
+        hasRepoMutation: true,
+        hasTimedCommitment: false,
+        toolNeeds: ["rg", "apply_patch"],
+        isMultiStep: true,
+        surface: undefined,
       });
     } finally {
       process.exitCode = prevExit;
