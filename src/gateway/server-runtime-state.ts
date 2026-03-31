@@ -13,6 +13,8 @@ import {
   resolveActivePluginHttpRouteRegistry,
 } from "../plugins/runtime.js";
 import type { RuntimeEnv } from "../runtime.js";
+import { configureTaskRegistryRuntime } from "../tasks/task-registry.store.js";
+import { createTaskRegistryMissionHooks } from "../tasks/task-registry-mission-runtime.js";
 import type { AuthRateLimiter } from "./auth-rate-limit.js";
 import type { ResolvedGatewayAuth } from "./auth.js";
 import type { ChatAbortControllerEntry } from "./chat-abort.js";
@@ -106,6 +108,9 @@ export async function createGatewayRuntimeState(params: {
   chatAbortControllers: Map<string, ChatAbortControllerEntry>;
   toolEventRecipients: ReturnType<typeof createToolEventRecipientRegistry>;
 }> {
+  configureTaskRegistryRuntime({
+    hooks: createTaskRegistryMissionHooks(),
+  });
   pinActivePluginHttpRouteRegistry(params.pluginRegistry);
   if (params.pinChannelRegistry !== false) {
     pinActivePluginChannelRegistry(params.pluginRegistry);

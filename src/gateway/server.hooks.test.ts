@@ -1,7 +1,16 @@
 import fs from "node:fs/promises";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { loadConfig } from "../config/config.js";
+import {
+  loadSessionStore,
+  mergeSessionEntry,
+  resolveSessionStoreEntry,
+  resolveStorePath,
+  updateSessionStore,
+} from "../config/sessions.js";
 import { resolveMainSessionKeyFromConfig } from "../config/sessions.js";
 import { drainSystemEvents, peekSystemEvents } from "../infra/system-events.js";
+import { resetTaskRegistryForTests } from "../tasks/task-registry.js";
 import { DEDUPE_TTL_MS } from "./server-constants.js";
 import {
   cronIsolatedRun,
@@ -18,6 +27,7 @@ const HOOK_TOKEN = "hook-secret";
 
 afterEach(() => {
   vi.restoreAllMocks();
+  resetTaskRegistryForTests({ persist: false });
 });
 
 function buildHookJsonHeaders(options?: {
@@ -96,6 +106,21 @@ async function expectFirstHookDelivery(
   await waitForSystemEvent();
   drainSystemEvents(resolveMainKey());
   return firstBody;
+}
+
+async function waitForAssertion(assertion: () => void, timeoutMs = 2_000, stepMs = 10) {
+  const startedAt = Date.now();
+  for (;;) {
+    try {
+      assertion();
+      return;
+    } catch (error) {
+      if (Date.now() - startedAt >= timeoutMs) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, stepMs));
+    }
+  }
 }
 
 describe("gateway server hooks", () => {
@@ -572,6 +597,115 @@ describe("gateway server hooks", () => {
       expect(allowed.status).toBe(200);
       await waitForSystemEvent();
       drainSystemEvents(resolveMainKey());
+    });
+  });
+
+  test("dispatches mission wakes from pending mission notifications without fallback spam", async () => {
+    testState.hooksConfig = { enabled: true, token: HOOK_TOKEN };
+    await withGatewayServer(async () => {
+      const cfg = loadConfig();
+      const storePath = resolveStorePath(cfg.session?.store, { agentId: "main" });
+      await updateSessionStore(storePath, async (store) => {
+        const resolved = resolveSessionStoreEntry({ store, sessionKey: "agent:main:main" });
+        store[resolved.normalizedKey] = mergeSessionEntry(resolved.existing, {
+          pendingMissionNotifications: {
+            "mission-hook-1": {
+              missionId: "mission-hook-1",
+              workerId: "worker-hook-1",
+              finalState: "completed",
+              statusSummary: "Source-owned mission wake is ready.",
+              artifactPath: null,
+              deliveredAtMs: Date.now(),
+              attempts: 0,
+              expiresAtMs: Date.now() + 60_000,
+            },
+          },
+        });
+      });
+
+      cronIsolatedRun.mockClear();
+      cronIsolatedRun.mockResolvedValueOnce({
+        status: "ok",
+        summary: "wake delivered",
+        delivered: true,
+      });
+
+      const runtime = (globalThis as typeof globalThis & {
+        __openclaw_mission_wake_runtime__?: {
+          dispatchForSession: (sessionKey: string) => Promise<boolean>;
+        };
+      }).__openclaw_mission_wake_runtime__;
+      expect(runtime).toBeTruthy();
+      await runtime!.dispatchForSession("agent:main:main");
+
+      await waitForAssertion(() => {
+        expect(cronIsolatedRun).toHaveBeenCalledTimes(1);
+      });
+
+      const call = (cronIsolatedRun.mock.calls[0] as unknown[] | undefined)?.[0] as
+        | { sessionKey?: string; job?: { sessionKey?: string; payload?: { deliver?: boolean; message?: string } } }
+        | undefined;
+      expect(call?.sessionKey).toBe("agent:main:main");
+      expect(call?.job?.sessionKey).toBe("agent:main:main");
+      expect(call?.job?.payload?.deliver).toBe(true);
+      expect(call?.job?.payload?.message).toContain("mission-hook-1");
+      expect(peekSystemEvents(resolveMainKey())).toEqual([]);
+
+      await waitForAssertion(() => {
+        const store = loadSessionStore(storePath, { skipCache: true });
+        expect(store["agent:main:main"]?.pendingMissionNotifications).toBeNull();
+      });
+    });
+  });
+
+  test("keeps mission wake pending when the isolated turn does not deliver", async () => {
+    testState.hooksConfig = { enabled: true, token: HOOK_TOKEN };
+    await withGatewayServer(async () => {
+      const cfg = loadConfig();
+      const storePath = resolveStorePath(cfg.session?.store, { agentId: "main" });
+      await updateSessionStore(storePath, async (store) => {
+        const resolved = resolveSessionStoreEntry({ store, sessionKey: "agent:main:main" });
+        store[resolved.normalizedKey] = mergeSessionEntry(resolved.existing, {
+          pendingMissionNotifications: {
+            "mission-hook-2": {
+              missionId: "mission-hook-2",
+              workerId: "worker-hook-2",
+              finalState: "completed",
+              statusSummary: "Delivery should stay pending.",
+              artifactPath: null,
+              deliveredAtMs: Date.now(),
+              attempts: 0,
+              expiresAtMs: Date.now() + 60_000,
+            },
+          },
+        });
+      });
+
+      cronIsolatedRun.mockClear();
+      cronIsolatedRun.mockResolvedValueOnce({
+        status: "ok",
+        summary: "not delivered",
+        delivered: false,
+      });
+
+      const runtime = (globalThis as typeof globalThis & {
+        __openclaw_mission_wake_runtime__?: {
+          dispatchForSession: (sessionKey: string) => Promise<boolean>;
+        };
+      }).__openclaw_mission_wake_runtime__;
+      expect(runtime).toBeTruthy();
+      await runtime!.dispatchForSession("agent:main:main");
+
+      await waitForAssertion(() => {
+        expect(cronIsolatedRun).toHaveBeenCalledTimes(1);
+      });
+
+      expect(peekSystemEvents(resolveMainKey())).toEqual([]);
+      const store = loadSessionStore(storePath, { skipCache: true });
+      expect(store["agent:main:main"]?.pendingMissionNotifications?.["mission-hook-2"]).toMatchObject({
+        missionId: "mission-hook-2",
+        attempts: 1,
+      });
     });
   });
 });

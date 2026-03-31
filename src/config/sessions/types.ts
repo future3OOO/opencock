@@ -72,6 +72,36 @@ export type CliSessionBinding = {
   mcpConfigHash?: string;
 };
 
+export type PendingMissionNotification = {
+  missionId: string;
+  workerId: string;
+  finalState: string;
+  statusSummary?: string | null;
+  artifactPath?: string | null;
+  deliveredAtMs: number;
+  attempts: number;
+  expiresAtMs: number;
+};
+
+export type SessionLastDeliveredMission = {
+  missionId: string;
+  workerId: string;
+  state: string;
+  summary?: string | null;
+  artifactPath?: string | null;
+  deliveredAt: number;
+  resolved?: boolean;
+};
+
+export type SessionMissionEvent = {
+  missionId: string;
+  workerId: string;
+  state: string;
+  summary?: string | null;
+  artifactPath?: string | null;
+  deliveredAt: number;
+};
+
 export type SessionEntry = {
   /**
    * Last delivered heartbeat payload (used to suppress duplicate heartbeat notifications).
@@ -191,6 +221,12 @@ export type SessionEntry = {
   skillsSnapshot?: SessionSkillSnapshot;
   systemPromptReport?: SessionSystemPromptReport;
   acp?: SessionAcpMeta;
+  continuitySummary?: string | null;
+  continuityUpdatedAt?: number;
+  lastDeliveredMission?: SessionLastDeliveredMission | null;
+  recentMissionEvents?: SessionMissionEvent[] | null;
+  lastSeenMissionEventAt?: number;
+  pendingMissionNotifications?: Record<string, PendingMissionNotification> | null;
 };
 
 function normalizeRuntimeField(value: string | undefined): string | undefined {

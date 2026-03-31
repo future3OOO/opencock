@@ -18,6 +18,11 @@ If this PR fixes a plugin beta-release blocker, title it `fix(<plugin-id>): beta
 - [ ] Security hardening
 - [ ] Chore/infra
 
+## Fork Delta Ledger
+
+- [ ] Updated `OPENCOCK_DELTA_CHANGELOG.md` for any fork-only behavior added, changed, retired, or moved into source ownership.
+- If not needed, explain why:
+
 ## Scope (select all touched areas)
 
 - [ ] Gateway / orchestration
