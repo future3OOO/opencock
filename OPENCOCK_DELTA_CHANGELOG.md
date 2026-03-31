@@ -48,6 +48,79 @@ git diff --stat upstream/main...HEAD
 
 ### 2026-03-31
 
+#### Source-owned orchestration command and session lifecycle slice
+
+Moved the first real delegation/control-plane slice out of workspace Python and patched dist into OpenCock source.
+
+- Added native orchestration service and session-binding helpers in:
+  - `src/orchestration/service.ts`
+  - `src/orchestration/session-state.ts`
+  - `src/orchestration/service.test.ts`
+- Added source-owned CLI entrypoints in:
+  - `src/cli/program/register.orchestrator.ts`
+  - `src/cli/program/register.orchestrator.test.ts`
+  - `src/cli/program/command-registry.ts`
+  - `src/cli/program/command-registry.test.ts`
+  - `src/cli/program/core-command-descriptors.ts`
+- Added orchestration metadata persistence in:
+  - `src/tasks/task-registry.types.ts`
+  - `src/tasks/task-registry.ts`
+  - `src/tasks/task-registry.store.sqlite.ts`
+  - `src/tasks/task-executor.ts`
+  - `src/agents/subagent-spawn.ts`
+  - `src/agents/subagent-registry.ts`
+  - `src/agents/subagent-registry-run-manager.ts`
+
+Behavior change:
+
+- `openclaw orchestrator delegate|delegate-many|status|list|cancel` now has a source-owned implementation
+- direct delegation now uses the native subagent spawn path instead of the patched `dist` bridge
+- canonical task records now carry orchestration mission metadata:
+  - mission/source id
+  - worker id
+  - routing class
+  - originating surface
+  - status summary
+- requester session state now binds active mission / focused worker in source-owned session helpers
+- terminal mission projection now clears that active binding from source task lifecycle transitions
+
+Why this fork-only:
+
+- the live system has a custom delegation/orchestration loop that upstream OpenClaw does not currently own
+- this slice starts moving that truth into maintained fork source instead of leaving core control flow split across workspace Python and patched runtime output
+
+#### Source-owned mission-router engine primitives and duplicate suppression slice
+
+Promoted the first engine-owned `mission_router.py` behavior into OpenCock source instead of leaving it in workspace Python.
+
+- Added source-owned orchestration primitives in:
+  - `src/orchestration/runtime-primitives.ts`
+  - `src/orchestration/runtime-primitives.test.ts`
+- Extended native orchestration delegation in:
+  - `src/orchestration/service.ts`
+  - `src/orchestration/service.test.ts`
+- Extended canonical task persistence for duplicate suppression in:
+  - `src/tasks/task-registry.types.ts`
+  - `src/tasks/task-registry.ts`
+  - `src/tasks/task-registry.store.sqlite.ts`
+  - `src/tasks/task-registry.store.test.ts`
+  - `src/tasks/task-executor.ts`
+  - `src/agents/subagent-spawn.ts`
+  - `src/agents/subagent-registry.ts`
+  - `src/agents/subagent-registry-run-manager.ts`
+
+Behavior change:
+
+- direct orchestration now computes deterministic mission labels and suppression keys in source
+- native delegation suppresses duplicate worker spawns against matching active or recent cooldown-bound tasks using canonical task state
+- orchestrator status/list flows now continue to rely on source-owned task mission metadata instead of workspace Python worker records for this slice
+- canonical task storage now persists orchestration duplicate-suppression metadata across sqlite restore cycles
+
+Why this fork-only:
+
+- the live system’s duplicate delegation protection was still trapped in workspace Python under `mission_router.py` / `dispatch.py`
+- this slice starts retiring that split authority from the engine path by moving generic orchestration lifecycle semantics into maintained fork source
+
 #### Source-owned mission completion projection
 
 Moved the first orchestration slice from patched runtime output into OpenCock source.
@@ -99,6 +172,6 @@ Why this fork-only:
 #### Validation
 
 - Focused tests:
-  - `pnpm exec vitest run src/tasks/task-registry-mission-runtime.test.ts src/gateway/server.hooks.test.ts src/tasks/task-registry.test.ts`
+  - `pnpm exec vitest run src/orchestration/runtime-primitives.test.ts src/orchestration/service.test.ts src/tasks/task-registry.store.test.ts src/tasks/task-registry-mission-runtime.test.ts src/gateway/server.hooks.test.ts src/tasks/task-registry.test.ts src/cli/program/register.orchestrator.test.ts`
 - Build:
   - `pnpm build`

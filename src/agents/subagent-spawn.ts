@@ -86,6 +86,14 @@ export type SpawnSubagentParams = {
     mimeType?: string;
   }>;
   attachMountPath?: string;
+  orchestration?: {
+    missionId?: string;
+    workerId?: string;
+    routingClass?: string;
+    surface?: string;
+    statusSummary?: string;
+    suppressionKey?: string;
+  };
 };
 
 export type SpawnSubagentContext = {
@@ -812,6 +820,12 @@ export async function spawnSubagentDirect(
       attachmentsDir: attachmentAbsDir,
       attachmentsRootDir: attachmentRootDir,
       retainAttachmentsOnKeep: retainOnSessionKeep,
+      sourceId: params.orchestration?.missionId,
+      orchestrationWorkerId: params.orchestration?.workerId,
+      orchestrationRoutingClass: params.orchestration?.routingClass,
+      orchestrationSurface: params.orchestration?.surface,
+      orchestrationStatusSummary: params.orchestration?.statusSummary,
+      orchestrationSuppressionKey: params.orchestration?.suppressionKey,
     });
   } catch (err) {
     if (attachmentAbsDir) {

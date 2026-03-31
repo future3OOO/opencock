@@ -223,6 +223,9 @@ export type SessionEntry = {
   acp?: SessionAcpMeta;
   continuitySummary?: string | null;
   continuityUpdatedAt?: number;
+  workerNoticeCount?: number;
+  activeMissionId?: string | null;
+  focusedWorkerId?: string | null;
   lastDeliveredMission?: SessionLastDeliveredMission | null;
   recentMissionEvents?: SessionMissionEvent[] | null;
   lastSeenMissionEventAt?: number;

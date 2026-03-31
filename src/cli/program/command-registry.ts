@@ -183,6 +183,19 @@ const coreEntries: CoreCliEntry[] = [
   {
     commands: [
       {
+        name: "orchestrator",
+        description: "Delegate and track offloaded work from direct sessions",
+        hasSubcommands: true,
+      },
+    ],
+    register: async ({ program }) => {
+      const mod = await import("./register.orchestrator.js");
+      mod.registerOrchestratorCommand(program);
+    },
+  },
+  {
+    commands: [
+      {
         name: "status",
         description: "Show channel health and recent session recipients",
         hasSubcommands: false,

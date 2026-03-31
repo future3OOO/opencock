@@ -71,6 +71,11 @@ function ensureSingleTaskFlow(params: {
 export function createQueuedTaskRun(params: {
   runtime: TaskRuntime;
   sourceId?: string;
+  orchestrationWorkerId?: string;
+  orchestrationRoutingClass?: string;
+  orchestrationSurface?: string;
+  orchestrationStatusSummary?: string;
+  orchestrationSuppressionKey?: string;
   requesterSessionKey: string;
   requesterOrigin?: TaskDeliveryState["requesterOrigin"];
   parentFlowId?: string;
@@ -97,6 +102,11 @@ export function createQueuedTaskRun(params: {
 export function createRunningTaskRun(params: {
   runtime: TaskRuntime;
   sourceId?: string;
+  orchestrationWorkerId?: string;
+  orchestrationRoutingClass?: string;
+  orchestrationSurface?: string;
+  orchestrationStatusSummary?: string;
+  orchestrationSuppressionKey?: string;
   requesterSessionKey: string;
   requesterOrigin?: TaskDeliveryState["requesterOrigin"];
   parentFlowId?: string;

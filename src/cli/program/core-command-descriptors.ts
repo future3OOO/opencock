@@ -67,6 +67,11 @@ export const CORE_CLI_COMMAND_DESCRIPTORS = [
     hasSubcommands: true,
   },
   {
+    name: "orchestrator",
+    description: "Delegate and track offloaded work from direct sessions",
+    hasSubcommands: true,
+  },
+  {
     name: "status",
     description: "Show channel health and recent session recipients",
     hasSubcommands: false,

@@ -7,13 +7,6 @@ import type { CronJob } from "../../cron/types.js";
 import { requestHeartbeatNow } from "../../infra/heartbeat-wake.js";
 import { enqueueSystemEvent } from "../../infra/system-events.js";
 import type { createSubsystemLogger } from "../../logging/subsystem.js";
-import { loadCombinedSessionStoreForGateway, loadSessionEntry } from "../session-utils.js";
-import {
-  normalizeHookDispatchSessionKey,
-  type HookAgentDispatchPayload,
-  type HooksConfigResolved,
-} from "../hooks.js";
-import { createHooksRequestHandler, type HookClientIpConfig } from "../server-http.js";
 import {
   buildMissionWakeMessage,
   clearPendingMissionNotifications,
@@ -23,6 +16,13 @@ import {
   pruneExpiredPendingMissionNotifications,
   readPendingMissionNotificationRecords,
 } from "../../tasks/task-registry-mission-runtime.js";
+import {
+  normalizeHookDispatchSessionKey,
+  type HookAgentDispatchPayload,
+  type HooksConfigResolved,
+} from "../hooks.js";
+import { createHooksRequestHandler, type HookClientIpConfig } from "../server-http.js";
+import { loadCombinedSessionStoreForGateway, loadSessionEntry } from "../session-utils.js";
 
 type SubsystemLogger = ReturnType<typeof createSubsystemLogger>;
 
@@ -54,7 +54,7 @@ export function createGatewayHooksRequestHandler(params: {
   const missionWakeInFlight =
     missionWakeGlobals[MISSION_WAKE_IN_FLIGHT_KEY] instanceof Set
       ? (missionWakeGlobals[MISSION_WAKE_IN_FLIGHT_KEY] as Set<string>)
-      : ((missionWakeGlobals[MISSION_WAKE_IN_FLIGHT_KEY] = new Set<string>()) as Set<string>);
+      : (missionWakeGlobals[MISSION_WAKE_IN_FLIGHT_KEY] = new Set<string>());
 
   const dispatchWakeHook = (value: { text: string; mode: "now" | "next-heartbeat" }) => {
     const sessionKey = resolveMainSessionKeyFromConfig();
@@ -77,7 +77,7 @@ export function createGatewayHooksRequestHandler(params: {
           .filter(Boolean)
       : [];
     if (isMissionWake && missionWakeInFlight.has(sessionKey)) {
-      return null;
+      return `mission-wake:${sessionKey}`;
     }
     if (isMissionWake) {
       missionWakeInFlight.add(sessionKey);
@@ -127,8 +127,13 @@ export function createGatewayHooksRequestHandler(params: {
         const summary = result.summary?.trim() || result.error?.trim() || result.status;
         const prefix =
           result.status === "ok" ? `Hook ${value.name}` : `Hook ${value.name} (${result.status})`;
-        const missionWakeDelivered = !isMissionWake || value.deliver !== true || result.delivered === true;
-        if (isMissionWake && result.status === "ok" && missionWakeDelivered && missionIds.length > 0) {
+        const missionWakeDelivered = !isMissionWake || !value.deliver || result.delivered === true;
+        if (
+          isMissionWake &&
+          result.status === "ok" &&
+          missionWakeDelivered &&
+          missionIds.length > 0
+        ) {
           await clearPendingMissionNotifications(sessionKey, missionIds);
         }
         if (!result.delivered && value.suppressUndeliveredEnqueue !== true) {
@@ -141,18 +146,20 @@ export function createGatewayHooksRequestHandler(params: {
         }
         if (isMissionWake && result.status === "ok" && missionWakeDelivered) {
           queueMicrotask(() => {
-            void (missionWakeGlobals[MISSION_WAKE_RUNTIME_KEY] as MissionWakeRuntime | undefined)
-              ?.dispatchForSession?.(sessionKey);
+            void (
+              missionWakeGlobals[MISSION_WAKE_RUNTIME_KEY] as MissionWakeRuntime | undefined
+            )?.dispatchForSession?.(sessionKey);
           });
         } else if (
           isMissionWake &&
           missionIds.length > 0 &&
           (isTransientMissionWakeFailure(result) ||
-            (value.deliver === true && result.status === "ok" && result.delivered !== true))
+            (value.deliver && result.status === "ok" && result.delivered !== true))
         ) {
           setTimeout(() => {
-            void (missionWakeGlobals[MISSION_WAKE_RUNTIME_KEY] as MissionWakeRuntime | undefined)
-              ?.dispatchForSession?.(sessionKey);
+            void (
+              missionWakeGlobals[MISSION_WAKE_RUNTIME_KEY] as MissionWakeRuntime | undefined
+            )?.dispatchForSession?.(sessionKey);
           }, 1000);
         }
       } catch (err) {
@@ -167,8 +174,9 @@ export function createGatewayHooksRequestHandler(params: {
         }
         if (isMissionWake && missionIds.length > 0 && isTransientMissionWakeFailure(String(err))) {
           setTimeout(() => {
-            void (missionWakeGlobals[MISSION_WAKE_RUNTIME_KEY] as MissionWakeRuntime | undefined)
-              ?.dispatchForSession?.(sessionKey);
+            void (
+              missionWakeGlobals[MISSION_WAKE_RUNTIME_KEY] as MissionWakeRuntime | undefined
+            )?.dispatchForSession?.(sessionKey);
           }, 1000);
         }
       } finally {
@@ -200,6 +208,7 @@ export function createGatewayHooksRequestHandler(params: {
       name: "Mission Wake",
       message: buildMissionWakeMessage(pending),
       deliver: true,
+      channel: "last",
       wakeMode: "now",
       purpose: "mission-wake",
       missionIds,
