@@ -345,7 +345,7 @@ describe("orchestration service", () => {
     });
   });
 
-  it("reconciles missing child sessions through the native task view", async () => {
+  it("reconciles stale bindings through the native task view before reporting session status", async () => {
     await withOrchestrationTempDir(async () => {
       const taskExecutor = await import("../tasks/task-executor.js");
       const { setSessionMissionBinding } = await import("./session-state.js");
@@ -378,6 +378,22 @@ describe("orchestration service", () => {
           sessionKey: "agent:main:whatsapp:direct:+64270000000",
         });
         expect(status).toMatchObject({
+          found: false,
+          missionId: null,
+          missions: [
+            expect.objectContaining({
+              missionId: "mission-source-lost",
+              state: "lost",
+            }),
+          ],
+        });
+        expect(status.replyText).toContain("Recent results:");
+
+        const explicit = await statusFromSession({
+          sessionKey: "agent:main:whatsapp:direct:+64270000000",
+          missionId: "mission-source-lost",
+        });
+        expect(explicit).toMatchObject({
           found: true,
           missionId: "mission-source-lost",
           state: "lost",
@@ -390,6 +406,10 @@ describe("orchestration service", () => {
           missionId: "mission-source-lost",
           state: "lost",
         });
+
+        const entry = loadSessionEntry("agent:main:whatsapp:direct:+64270000000").entry;
+        expect(entry?.activeMissionId ?? null).toBeNull();
+        expect(entry?.focusedWorkerId ?? null).toBeNull();
       } finally {
         nowSpy.mockRestore();
       }

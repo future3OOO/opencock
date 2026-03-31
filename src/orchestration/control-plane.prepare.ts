@@ -25,7 +25,7 @@ import {
   isGroupOrchestratorSession,
   resolveContinuationIntent,
 } from "./runtime-primitives.js";
-import { readSessionMissionBinding } from "./session-state.js";
+import { reconcileSessionMissionBinding } from "./session-binding-reconcile.js";
 
 export async function prepareDispatchRequestFromSession(params: {
   text: string;
@@ -92,11 +92,13 @@ export async function prepareDispatchRequestFromSession(params: {
       reasons: orchestratorFreshness.reasons,
     });
   }
-  const binding = readSessionMissionBinding(loaded.entry);
+  const binding = await reconcileSessionMissionBinding({
+    sessionKey: canonicalSessionKey,
+  });
   const continuation = resolveContinuationIntent({
     text,
-    activeMissionId: binding.activeMissionId,
-    focusedWorkerId: binding.focusedWorkerId,
+    activeMissionId: binding.binding.activeMissionId,
+    focusedWorkerId: binding.binding.focusedWorkerId,
   });
   if (continuation.isContinuation) {
     const task = resolveMissionTask(canonicalSessionKey, continuation.missionId);

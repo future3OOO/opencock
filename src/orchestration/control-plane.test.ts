@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { clearConfigCache, clearRuntimeConfigSnapshot, loadConfig } from "../config/config.js";
 import { loadSessionStore, resolveStorePath, updateSessionStoreEntry } from "../config/sessions.js";
 import { clearInternalHooks } from "../hooks/internal-hooks.js";
@@ -346,6 +346,55 @@ describe("orchestration control plane", () => {
         freshnessResetReasons: ["transcript_bytes", "compactions", "worker_notices"],
       });
       expect(store[sessionKey]?.freshnessResetAt).toEqual(expect.any(Number));
+    });
+  });
+
+  it("clears stale session bindings before evaluating continuation intents", async () => {
+    await withControlPlaneTempDir(async () => {
+      const taskExecutor = await import("../tasks/task-executor.js");
+      const { setSessionMissionBinding } = await import("./session-state.js");
+      const { prepareDispatchRequestFromSession } = await import("./control-plane.js");
+
+      taskExecutor.createRunningTaskRun({
+        runtime: "subagent",
+        sourceId: "mission-source-stale-binding",
+        orchestrationWorkerId: "worker-source-stale-binding",
+        orchestrationRoutingClass: "coding",
+        orchestrationSurface: "whatsapp",
+        requesterSessionKey: "agent:main:whatsapp:direct:+64270000000",
+        childSessionKey: "agent:main:subagent:missing-child",
+        runId: "run-source-stale-binding",
+        label: "coding",
+        task: "Stale binding task",
+        deliveryStatus: "pending",
+        startedAt: 0,
+        lastEventAt: 0,
+      });
+      await setSessionMissionBinding({
+        sessionKey: "agent:main:whatsapp:direct:+64270000000",
+        missionId: "mission-source-stale-binding",
+        workerId: "worker-source-stale-binding",
+      });
+
+      const nowSpy = vi.spyOn(Date, "now").mockReturnValue(10 * 60_000);
+      try {
+        const prepared = await prepareDispatchRequestFromSession({
+          sessionKey: "agent:main:whatsapp:direct:+64270000000",
+          text: "status?",
+          allowAutoDelegate: true,
+        });
+
+        expect(prepared).not.toMatchObject({ action: "continue" });
+
+        const storePath = resolveStorePath(loadConfig().session?.store, { agentId: "main" });
+        const store = loadSessionStore(storePath, { skipCache: true });
+        expect(store["agent:main:whatsapp:direct:+64270000000"]).toMatchObject({
+          activeMissionId: null,
+          focusedWorkerId: null,
+        });
+      } finally {
+        nowSpy.mockRestore();
+      }
     });
   });
 });
