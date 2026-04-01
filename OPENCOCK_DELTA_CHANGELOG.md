@@ -49,6 +49,65 @@ git diff --stat upstream/main...HEAD
 
 ### 2026-04-01
 
+#### Source-owned mission-wake bundled hook promotion
+
+Promoted mission wake from a managed state-tree hook into bundled OpenCock source hook infrastructure.
+
+- Added source-owned mission-wake runtime/global seam in:
+  - `src/gateway/mission-wake-runtime.ts`
+- Added bundled hook metadata and handler in:
+  - `src/hooks/bundled/mission-wake/HOOK.md`
+  - `src/hooks/bundled/mission-wake/handler.ts`
+  - `src/hooks/bundled/mission-wake/handler.test.ts`
+- Rebased source gateway hook runtime registration in:
+  - `src/gateway/server/hooks.ts`
+  - `src/hooks/bundled/README.md`
+
+Behavior change:
+
+- `agent:mission:completed` and `gateway:startup` are now handled by a bundled source hook instead of depending on `~/.openclaw/hooks/mission-wake/*`
+- source gateway runtime exposes the mission-wake dispatcher/recovery seam once, and the bundled hook invokes it through source-owned runtime registration
+- restart recovery and pending mission replay now remain part of maintained fork source instead of a managed-hook-only deployment detail
+
+Why this fork-only:
+
+- the live system had critical orchestration behavior trapped in managed hook state outside the fork source tree
+- this slice makes mission wake part of the engine/runtime product instead of local state glue
+
+#### Source-owned direct-session context and Claude project memory sync
+
+Promoted the remaining direct-session continuity/mission-context injection seam out of patched `reply` dist and into OpenCock source.
+
+- Added source-owned direct-session bootstrap context in:
+  - `src/orchestration/direct-session-context.ts`
+  - `src/orchestration/direct-session-context.test.ts`
+- Threaded direct-session mission-context clearing through the CLI runner in:
+  - `src/agents/cli-runner/prepare.ts`
+  - `src/agents/cli-runner.ts`
+  - `src/agents/cli-runner/types.ts`
+  - `src/agents/cli-runner.test-support.ts`
+  - `src/agents/cli-runner.direct-session-context.test.ts`
+- Added source-owned Claude project `MEMORY.md` sync for resumed Claude Code sessions in:
+  - `src/agents/cli-runner/claude-project-memory.ts`
+  - `src/agents/cli-runner/claude-project-memory.test.ts`
+
+Behavior change:
+
+- direct-session CLI runs now inject a runtime-built bootstrap context containing:
+  - continuity summary
+  - active mission state
+  - unread mission results
+  - recent recovered direct conversation
+- unread mission events are marked seen in source when that runtime context is injected
+- pending mission notifications are cleared in source after a successful direct-session reply that consumed the context
+- Claude Code sessions now get the same runtime direct-session context synced into the Claude project `MEMORY.md` path from maintained source, so resumed sessions do not depend on dist-only memory mirror hacks
+- the source runtime path contains no hardcoded legacy `Daddy` direct-session doctrine
+
+Why this fork-only:
+
+- the live system’s direct-session continuity and mission-context behavior had been trapped in patched `reply` dist logic
+- this slice rehomes the necessary mechanics into maintained fork source without carrying forward the stale doctrine text or worker-registry dependency
+
 #### Source-owned external task registration for quarantined workspace work
 
 Promoted the session-separation quarantine registration seam into OpenCock source so externally parked work can be tracked in the canonical task ledger instead of the legacy Python worker registry.

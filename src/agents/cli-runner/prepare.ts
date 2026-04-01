@@ -1,4 +1,5 @@
 import { resolveHeartbeatPrompt } from "../../auto-reply/heartbeat.js";
+import { resolveDirectSessionBootstrapContext } from "../../orchestration/direct-session-context.js";
 import { resolveSessionAgentIds } from "../agent-scope.js";
 import {
   buildBootstrapInjectionStats,
@@ -14,6 +15,7 @@ import { resolveCliBackendConfig } from "../cli-backends.js";
 import { hashCliSessionText, resolveCliSessionReuse } from "../cli-session.js";
 import { resolveOpenClawDocsPath } from "../docs-path.js";
 import {
+  buildBootstrapContextFiles,
   resolveBootstrapMaxChars,
   resolveBootstrapPromptTruncationWarningMode,
   resolveBootstrapTotalMaxChars,
@@ -21,6 +23,7 @@ import {
 import { buildSystemPromptReport } from "../system-prompt-report.js";
 import { redactRunIdentifier, resolveRunWorkspaceDir } from "../workspace-run.js";
 import { prepareCliBundleMcpConfig } from "./bundle-mcp.js";
+import { syncClaudeProjectMemory } from "./claude-project-memory.js";
 import { buildSystemPrompt, normalizeCliModel } from "./helpers.js";
 import { cliBackendLog } from "./log.js";
 import type { PreparedCliRunContext, RunCliAgentParams } from "./types.js";
@@ -28,6 +31,8 @@ import type { PreparedCliRunContext, RunCliAgentParams } from "./types.js";
 const prepareDeps = {
   makeBootstrapWarn: makeBootstrapWarnImpl,
   resolveBootstrapContextForRun: resolveBootstrapContextForRunImpl,
+  resolveDirectSessionBootstrapContext,
+  syncClaudeProjectMemory,
 };
 
 export function setCliRunnerPrepareTestDeps(overrides: Partial<typeof prepareDeps>): void {
@@ -86,18 +91,37 @@ export async function prepareCliRunContext(
   const modelDisplay = `${params.provider}/${modelId}`;
 
   const sessionLabel = params.sessionKey ?? params.sessionId;
-  const { bootstrapFiles, contextFiles } = await prepareDeps.resolveBootstrapContextForRun({
+  const bootstrapWarn = prepareDeps.makeBootstrapWarn({
+    sessionLabel,
+    warn: (message) => cliBackendLog.warn(message),
+  });
+  const bootstrapMaxChars = resolveBootstrapMaxChars(params.config);
+  const bootstrapTotalMaxChars = resolveBootstrapTotalMaxChars(params.config);
+  let { bootstrapFiles, contextFiles } = await prepareDeps.resolveBootstrapContextForRun({
     workspaceDir,
     config: params.config,
     sessionKey: params.sessionKey,
     sessionId: params.sessionId,
-    warn: prepareDeps.makeBootstrapWarn({
-      sessionLabel,
-      warn: (message) => cliBackendLog.warn(message),
-    }),
+    warn: bootstrapWarn,
   });
-  const bootstrapMaxChars = resolveBootstrapMaxChars(params.config);
-  const bootstrapTotalMaxChars = resolveBootstrapTotalMaxChars(params.config);
+  const directSessionContext = await prepareDeps.resolveDirectSessionBootstrapContext({
+    sessionKey: params.sessionKey,
+    sessionFile: params.sessionFile,
+  });
+  if (directSessionContext.bootstrapFile) {
+    bootstrapFiles = [...bootstrapFiles, directSessionContext.bootstrapFile];
+    contextFiles = buildBootstrapContextFiles(bootstrapFiles, {
+      maxChars: bootstrapMaxChars,
+      totalMaxChars: bootstrapTotalMaxChars,
+      warn: bootstrapWarn,
+    });
+    if (params.provider === "claude-cli" && directSessionContext.bootstrapFile.content) {
+      await prepareDeps.syncClaudeProjectMemory({
+        workspaceDir,
+        content: directSessionContext.bootstrapFile.content,
+      });
+    }
+  }
   const bootstrapAnalysis = analyzeBootstrapBudget({
     files: buildBootstrapInjectionStats({
       bootstrapFiles,
@@ -176,6 +200,7 @@ export async function prepareCliRunContext(
     systemPrompt,
     systemPromptReport,
     bootstrapPromptWarningLines: bootstrapPromptWarning.lines,
+    consumedPendingMissionIds: directSessionContext.consumedPendingMissionIds,
     heartbeatPrompt,
     extraSystemPromptHash,
   };

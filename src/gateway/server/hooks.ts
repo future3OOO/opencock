@@ -21,18 +21,17 @@ import {
   type HookAgentDispatchPayload,
   type HooksConfigResolved,
 } from "../hooks.js";
+import {
+  getMissionWakeRuntime,
+  setMissionWakeRuntime,
+  type MissionWakeRuntime,
+} from "../mission-wake-runtime.js";
 import { createHooksRequestHandler, type HookClientIpConfig } from "../server-http.js";
 import { loadCombinedSessionStoreForGateway, loadSessionEntry } from "../session-utils.js";
 
 type SubsystemLogger = ReturnType<typeof createSubsystemLogger>;
 
-const MISSION_WAKE_RUNTIME_KEY = "__openclaw_mission_wake_runtime__";
 const MISSION_WAKE_IN_FLIGHT_KEY = "__openclaw_mission_wake_in_flight__";
-
-type MissionWakeRuntime = {
-  dispatchForSession: (sessionKey: string) => Promise<boolean>;
-  recoverPending: () => Promise<void>;
-};
 
 export function resolveHookClientIpConfig(cfg: OpenClawConfig): HookClientIpConfig {
   return {
@@ -146,9 +145,7 @@ export function createGatewayHooksRequestHandler(params: {
         }
         if (isMissionWake && result.status === "ok" && missionWakeDelivered) {
           queueMicrotask(() => {
-            void (
-              missionWakeGlobals[MISSION_WAKE_RUNTIME_KEY] as MissionWakeRuntime | undefined
-            )?.dispatchForSession?.(sessionKey);
+            void getMissionWakeRuntime()?.dispatchForSession?.(sessionKey);
           });
         } else if (
           isMissionWake &&
@@ -157,9 +154,7 @@ export function createGatewayHooksRequestHandler(params: {
             (value.deliver && result.status === "ok" && result.delivered !== true))
         ) {
           setTimeout(() => {
-            void (
-              missionWakeGlobals[MISSION_WAKE_RUNTIME_KEY] as MissionWakeRuntime | undefined
-            )?.dispatchForSession?.(sessionKey);
+            void getMissionWakeRuntime()?.dispatchForSession?.(sessionKey);
           }, 1000);
         }
       } catch (err) {
@@ -174,9 +169,7 @@ export function createGatewayHooksRequestHandler(params: {
         }
         if (isMissionWake && missionIds.length > 0 && isTransientMissionWakeFailure(String(err))) {
           setTimeout(() => {
-            void (
-              missionWakeGlobals[MISSION_WAKE_RUNTIME_KEY] as MissionWakeRuntime | undefined
-            )?.dispatchForSession?.(sessionKey);
+            void getMissionWakeRuntime()?.dispatchForSession?.(sessionKey);
           }, 1000);
         }
       } finally {
@@ -227,10 +220,10 @@ export function createGatewayHooksRequestHandler(params: {
     }
   };
 
-  missionWakeGlobals[MISSION_WAKE_RUNTIME_KEY] = {
+  setMissionWakeRuntime({
     dispatchForSession: dispatchMissionWakeForSession,
     recoverPending: recoverPendingMissionWakes,
-  } satisfies MissionWakeRuntime;
+  } satisfies MissionWakeRuntime);
 
   return createHooksRequestHandler({
     getHooksConfig,

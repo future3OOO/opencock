@@ -60,6 +60,20 @@ Runs `BOOT.md` whenever the gateway starts (after channels start).
 openclaw hooks enable boot-md
 ```
 
+### 🔔 mission-wake
+
+Source-owned mission completion wake dispatch.
+
+**Events**: `agent:mission:completed`, `gateway:startup`
+**What it does**: Wakes the requester session when delegated missions complete and replays pending wakes after gateway restart.
+**Output**: No files written; runtime wake dispatch only.
+
+**Enable**:
+
+```bash
+openclaw hooks enable mission-wake
+```
+
 ## Hook Structure
 
 Each hook is a directory containing:
