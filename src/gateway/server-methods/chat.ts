@@ -1,9 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
-import { CURRENT_SESSION_VERSION, SessionManager } from "@mariozechner/pi-coding-agent";
+import { CURRENT_SESSION_VERSION } from "@mariozechner/pi-coding-agent";
 import { resolveSessionAgentId } from "../../agents/agent-scope.js";
 import { resolveThinkingDefault } from "../../agents/model-selection.js";
-import { rewriteTranscriptEntriesInSessionFile } from "../../agents/pi-embedded-runner/transcript-rewrite.js";
 import { resolveAgentTimeoutMs } from "../../agents/timeout.js";
 import { dispatchInboundMessage } from "../../auto-reply/dispatch.js";
 import { createReplyDispatcher } from "../../auto-reply/reply/reply-dispatcher.js";
@@ -11,6 +10,7 @@ import type { MsgContext } from "../../auto-reply/templating.js";
 import { isSilentReplyText, SILENT_REPLY_TOKEN } from "../../auto-reply/tokens.js";
 import type { ReplyPayload } from "../../auto-reply/types.js";
 import { resolveSessionFilePath } from "../../config/sessions.js";
+import { appendUserMessageToSessionTranscript } from "../../config/sessions/transcript.js";
 import { jsonUtf8Bytes } from "../../infra/json-utf8-bytes.js";
 import type { PromptImageOrderEntry } from "../../media/prompt-image-order.js";
 import { type SavedMedia, saveMediaBuffer } from "../../media/store.js";
@@ -397,7 +397,7 @@ function buildChatSendTranscriptMessage(params: {
   const mediaFields = resolveChatSendTranscriptMediaFields(params.savedImages);
   return {
     role: "user" as const,
-    content: params.message,
+    content: [{ type: "text", text: params.message }],
     timestamp: params.timestamp,
     ...mediaFields,
   };
@@ -415,72 +415,6 @@ function resolveChatSendTranscriptMediaFields(savedImages: SavedMedia[]) {
     MediaType: mediaTypes[0],
     MediaTypes: mediaTypes,
   };
-}
-
-function extractTranscriptUserText(content: unknown): string | undefined {
-  if (typeof content === "string") {
-    return content;
-  }
-  if (!Array.isArray(content)) {
-    return undefined;
-  }
-  const textBlocks = content
-    .map((block) =>
-      block && typeof block === "object" && "text" in block ? block.text : undefined,
-    )
-    .filter((text): text is string => typeof text === "string");
-  return textBlocks.length > 0 ? textBlocks.join("") : undefined;
-}
-
-async function rewriteChatSendUserTurnMediaPaths(params: {
-  transcriptPath: string;
-  sessionKey: string;
-  message: string;
-  savedImages: SavedMedia[];
-}) {
-  const mediaFields = resolveChatSendTranscriptMediaFields(params.savedImages);
-  if (!("MediaPath" in mediaFields)) {
-    return;
-  }
-  const sessionManager = SessionManager.open(params.transcriptPath);
-  const branch = sessionManager.getBranch();
-  const target = [...branch].toReversed().find((entry) => {
-    if (entry.type !== "message" || entry.message.role !== "user") {
-      return false;
-    }
-    const existingPaths = Array.isArray((entry.message as { MediaPaths?: unknown }).MediaPaths)
-      ? (entry.message as { MediaPaths?: unknown[] }).MediaPaths
-      : undefined;
-    if (
-      (typeof (entry.message as { MediaPath?: unknown }).MediaPath === "string" &&
-        (entry.message as { MediaPath?: string }).MediaPath) ||
-      (existingPaths && existingPaths.length > 0)
-    ) {
-      return false;
-    }
-    return (
-      extractTranscriptUserText((entry.message as { content?: unknown }).content) === params.message
-    );
-  });
-  if (!target || target.type !== "message") {
-    return;
-  }
-  const rewrittenMessage = {
-    ...target.message,
-    ...mediaFields,
-  };
-  await rewriteTranscriptEntriesInSessionFile({
-    sessionFile: params.transcriptPath,
-    sessionKey: params.sessionKey,
-    request: {
-      replacements: [
-        {
-          entryId: target.id,
-          message: rewrittenMessage,
-        },
-      ],
-    },
-  });
 }
 
 function truncateChatHistoryText(text: string): { text: string; truncated: boolean } {
@@ -1649,44 +1583,38 @@ export const chatHandlers: GatewayRequestHandlers = {
             return;
           }
           const persistedImages = await persistedImagesPromise;
-          emitSessionTranscriptUpdate({
-            sessionFile: transcriptPath,
+          const appended = await appendUserMessageToSessionTranscript({
+            agentId,
             sessionKey,
-            message: buildChatSendTranscriptMessage({
-              message: parsedMessage,
-              savedImages: persistedImages,
-              timestamp: now,
-            }),
+            text: parsedMessage,
+            mediaPaths: persistedImages.map((entry) => entry.path),
+            mediaTypes: persistedImages.map(
+              (entry) => entry.contentType ?? "application/octet-stream",
+            ),
+            inputProvenance: systemInputProvenance,
+            idempotencyKey: `chat.send:user:${p.idempotencyKey ?? clientRunId}`,
+            storePath: latestStorePath,
+            timestamp: now,
+            sessionId: resolvedSessionId,
+            sessionEntry: latestEntry ?? entry,
+            sessionFile: latestEntry?.sessionFile ?? entry?.sessionFile,
           });
+          if (!appended.ok) {
+            context.logGateway.warn(
+              `webchat user transcript append failed: ${appended.reason ?? "unknown error"}`,
+            );
+            emitSessionTranscriptUpdate({
+              sessionFile: transcriptPath,
+              sessionKey,
+              message: buildChatSendTranscriptMessage({
+                message: parsedMessage,
+                savedImages: persistedImages,
+                timestamp: now,
+              }),
+            });
+          }
         })();
         await userTranscriptUpdatePromise;
-      };
-      let transcriptMediaRewriteDone = false;
-      const rewriteUserTranscriptMedia = async () => {
-        if (transcriptMediaRewriteDone) {
-          return;
-        }
-        const { storePath: latestStorePath, entry: latestEntry } = loadSessionEntry(sessionKey);
-        const resolvedSessionId = latestEntry?.sessionId ?? entry?.sessionId;
-        if (!resolvedSessionId) {
-          return;
-        }
-        const transcriptPath = resolveTranscriptPath({
-          sessionId: resolvedSessionId,
-          storePath: latestStorePath,
-          sessionFile: latestEntry?.sessionFile ?? entry?.sessionFile,
-          agentId,
-        });
-        if (!transcriptPath) {
-          return;
-        }
-        transcriptMediaRewriteDone = true;
-        await rewriteChatSendUserTurnMediaPaths({
-          transcriptPath,
-          sessionKey,
-          message: parsedMessage,
-          savedImages: await persistedImagesPromise,
-        });
       };
       const dispatcher = createReplyDispatcher({
         ...replyPipeline,
@@ -1744,7 +1672,6 @@ export const chatHandlers: GatewayRequestHandlers = {
         },
       })
         .then(async () => {
-          await rewriteUserTranscriptMedia();
           if (!agentRunStarted) {
             await emitUserTranscriptUpdate();
             const btwReplies = deliveredReplies
@@ -1833,11 +1760,6 @@ export const chatHandlers: GatewayRequestHandlers = {
           });
         })
         .catch((err) => {
-          void rewriteUserTranscriptMedia().catch((rewriteErr) => {
-            context.logGateway.warn(
-              `webchat transcript media rewrite failed after error: ${formatForLog(rewriteErr)}`,
-            );
-          });
           void emitUserTranscriptUpdate().catch((transcriptErr) => {
             context.logGateway.warn(
               `webchat user transcript update failed after error: ${formatForLog(transcriptErr)}`,

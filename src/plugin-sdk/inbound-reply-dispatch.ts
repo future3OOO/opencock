@@ -7,6 +7,10 @@ import type { ReplyDispatcher } from "../auto-reply/reply/reply-dispatcher.js";
 import type { FinalizedMsgContext } from "../auto-reply/templating.js";
 import type { GetReplyOptions } from "../auto-reply/types.js";
 import type { OpenClawConfig } from "../config/config.js";
+import {
+  appendUserMessageToSessionTranscript,
+  resolveInboundTranscriptIdempotencyKey,
+} from "../config/sessions/transcript.js";
 import { createChannelReplyPipeline } from "./channel-reply-pipeline.js";
 import { createNormalizedOutboundDeliverer, type OutboundReplyPayload } from "./reply-payload.js";
 
@@ -124,6 +128,21 @@ export async function recordInboundSessionAndDispatchReply(params: {
     ctx: params.ctxPayload,
     onRecordError: params.onRecordError,
   });
+  const transcriptSessionKey = params.ctxPayload.SessionKey ?? params.routeSessionKey;
+  const transcriptIdempotencyKey = resolveInboundTranscriptIdempotencyKey({
+    sessionKey: transcriptSessionKey,
+    ctx: params.ctxPayload,
+  });
+  const appended = await appendUserMessageToSessionTranscript({
+    agentId: params.agentId,
+    sessionKey: transcriptSessionKey,
+    ctx: params.ctxPayload,
+    storePath: params.storePath,
+    idempotencyKey: transcriptIdempotencyKey,
+  });
+  if (!appended.ok) {
+    params.onRecordError(new Error(`failed to persist inbound transcript: ${appended.reason}`));
+  }
 
   const { onModelSelected, ...replyPipeline } = createChannelReplyPipeline({
     cfg: params.cfg,

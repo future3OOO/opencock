@@ -22,7 +22,12 @@ import {
   validateSessionId,
 } from "./paths.js";
 import { evaluateSessionFreshness, resolveSessionResetPolicy } from "./reset.js";
-import { appendAssistantMessageToSessionTranscript } from "./transcript.js";
+import {
+  appendAssistantMessageToSessionTranscript,
+  appendUserMessageToSessionTranscript,
+  buildInboundTranscriptText,
+  resolveInboundTranscriptIdempotencyKey,
+} from "./transcript.js";
 import type { SessionEntry } from "./types.js";
 
 function useTempSessionsFixture(prefix: string) {
@@ -574,6 +579,124 @@ describe("appendAssistantMessageToSessionTranscript", () => {
     expect(result.ok).toBe(true);
     const lines = fs.readFileSync(sessionFile, "utf-8").trim().split("\n");
     expect(lines.length).toBe(3);
+  });
+});
+
+describe("appendUserMessageToSessionTranscript", () => {
+  const fixture = useTempSessionsFixture("inbound-transcript-test-");
+  const sessionId = "inbound-session-id";
+  const sessionKey = "agent:main:whatsapp:direct:+15551234567";
+
+  function writeTranscriptStore() {
+    fs.writeFileSync(
+      fixture.storePath(),
+      JSON.stringify({
+        [sessionKey]: {
+          sessionId,
+          chatType: "direct",
+          channel: "whatsapp",
+        },
+      }),
+      "utf-8",
+    );
+  }
+
+  it("formats inbound transcript text with metadata blocks", () => {
+    expect(
+      buildInboundTranscriptText({
+        Provider: "whatsapp",
+        Surface: "whatsapp",
+        BodyForCommands: "Where is the worker at?",
+        SenderId: "+15551234567",
+        SenderName: "Macca",
+        SenderE164: "+15551234567",
+        MessageSid: "wamid-1",
+        Timestamp: 1_710_000_000_000,
+      }),
+    ).toContain("Conversation info (untrusted metadata):");
+    expect(
+      buildInboundTranscriptText({
+        Provider: "whatsapp",
+        Surface: "whatsapp",
+        BodyForCommands: "Where is the worker at?",
+        SenderId: "+15551234567",
+        SenderName: "Macca",
+        SenderE164: "+15551234567",
+        MessageSid: "wamid-1",
+        Timestamp: 1_710_000_000_000,
+      }),
+    ).toContain("Where is the worker at?");
+  });
+
+  it("appends inbound user messages through SessionManager and emits transcript updates", async () => {
+    writeTranscriptStore();
+    const emitSpy = vi.spyOn(transcriptEvents, "emitSessionTranscriptUpdate");
+
+    const result = await appendUserMessageToSessionTranscript({
+      sessionKey,
+      storePath: fixture.storePath(),
+      ctx: {
+        Provider: "whatsapp",
+        Surface: "whatsapp",
+        BodyForCommands: "Where is the worker at?",
+        SenderId: "+15551234567",
+        SenderName: "Macca",
+        SenderE164: "+15551234567",
+        MessageSid: "wamid-1",
+        Timestamp: 1_710_000_000_000,
+      },
+      idempotencyKey: resolveInboundTranscriptIdempotencyKey({
+        sessionKey,
+        ctx: {
+          MessageSid: "wamid-1",
+        },
+      }),
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.reason);
+    }
+    const lines = fs.readFileSync(result.sessionFile, "utf-8").trim().split("\n");
+    expect(lines).toHaveLength(2);
+    const messageLine = JSON.parse(lines[1]);
+    expect(messageLine.message.role).toBe("user");
+    expect(messageLine.message.content).toContain("Where is the worker at?");
+    expect(messageLine.message.idempotencyKey).toBe(`inbound:${sessionKey}:wamid-1`);
+    expect(emitSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionFile: result.sessionFile,
+        sessionKey,
+        messageId: expect.any(String),
+        message: expect.objectContaining({
+          role: "user",
+          content: expect.stringContaining("Sender (untrusted metadata):"),
+        }),
+      }),
+    );
+    emitSpy.mockRestore();
+  });
+
+  it("does not append duplicate inbound user messages for the same idempotency key", async () => {
+    writeTranscriptStore();
+    const idempotencyKey = `inbound:${sessionKey}:wamid-1`;
+
+    await appendUserMessageToSessionTranscript({
+      sessionKey,
+      storePath: fixture.storePath(),
+      text: "First inbound",
+      idempotencyKey,
+    });
+    await appendUserMessageToSessionTranscript({
+      sessionKey,
+      storePath: fixture.storePath(),
+      text: "First inbound",
+      idempotencyKey,
+    });
+
+    const sessionFile = resolveSessionTranscriptPathInDir(sessionId, fixture.sessionsDir());
+    const lines = fs.readFileSync(sessionFile, "utf-8").trim().split("\n");
+    expect(lines).toHaveLength(2);
   });
 });
 

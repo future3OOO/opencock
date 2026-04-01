@@ -49,6 +49,37 @@ git diff --stat upstream/main...HEAD
 
 ### 2026-04-01
 
+#### Source-owned inbound transcript persistence and stable runtime entrypoint guardrails
+
+Promoted inbound/user transcript persistence into maintained OpenCock source and added build-time guardrails for the long-lived lazy runtime entrypoints that used to drift into hashed-sibling confusion.
+
+- Added source-owned inbound transcript append helpers in:
+  - `src/config/sessions/transcript.ts`
+  - `src/config/sessions/sessions.test.ts`
+- Rebased inbound reply/session dispatch onto the source-owned append path in:
+  - `src/plugin-sdk/inbound-reply-dispatch.ts`
+  - `src/plugin-sdk/inbound-reply-dispatch.test.ts`
+- Rebased gateway `chat.send` user-turn persistence onto the same source-owned path in:
+  - `src/gateway/server-methods/chat.ts`
+  - `src/gateway/server-methods/chat.directive-tags.test.ts`
+- Added stable lazy runtime entrypoints and build guardrails in:
+  - `tsdown.config.ts`
+  - `package.json`
+  - `scripts/check-stable-runtime-entrypoints.mjs`
+  - `test/scripts/check-stable-runtime-entrypoints.test.ts`
+
+Behavior change:
+
+- inbound/plugin-dispatched user turns now persist directly into session transcripts from maintained source instead of relying on the workspace `persist-inbound-message` hook for correctness
+- `chat.send` user turns now append through the same source-owned transcript path, including persisted media metadata and idempotent duplicate suppression
+- transcript user-turn persistence can target already-resolved `sessionId/sessionFile` pairs directly, so runtime callers do not silently fall back when `sessions.json` lookup is unavailable or stale
+- the build now emits and enforces stable `gateway-cli.js`, `health.js`, and `run-main.js` entrypoints so rebuilt runtime graphs stop stranding lazy imports on stale hashed siblings
+
+Why this fork-only:
+
+- the live system depended on a workspace hook to fill a real engine omission in transcript persistence
+- the old installed runtime also suffered from hashed-bundle drift around long-lived lazy entrypoints, which made local `dist` patching brittle and confusing
+
 #### Source-owned mission-wake bundled hook promotion
 
 Promoted mission wake from a managed state-tree hook into bundled OpenCock source hook infrastructure.
