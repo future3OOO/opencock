@@ -1,6 +1,7 @@
 import type { ImageContent } from "@mariozechner/pi-ai";
 import type { ThinkLevel } from "../auto-reply/thinking.js";
 import type { OpenClawConfig } from "../config/config.js";
+import { clearPendingMissionNotifications } from "../tasks/task-registry-mission-runtime.js";
 import { executePreparedCliRun } from "./cli-runner/execute.js";
 import { prepareCliRunContext } from "./cli-runner/prepare.js";
 import type { RunCliAgentParams } from "./cli-runner/types.js";
@@ -10,6 +11,13 @@ import type { EmbeddedPiRunResult } from "./pi-embedded-runner.js";
 
 export async function runCliAgent(params: RunCliAgentParams): Promise<EmbeddedPiRunResult> {
   const context = await prepareCliRunContext(params);
+
+  const clearConsumedMissionNotifications = async (text: string | undefined) => {
+    if (!text || !params.sessionKey || context.consumedPendingMissionIds.length === 0) {
+      return;
+    }
+    await clearPendingMissionNotifications(params.sessionKey, context.consumedPendingMissionIds);
+  };
 
   const buildCliRunResult = (resultParams: {
     output: Awaited<ReturnType<typeof executePreparedCliRun>>;
@@ -52,6 +60,7 @@ export async function runCliAgent(params: RunCliAgentParams): Promise<EmbeddedPi
     try {
       const output = await executePreparedCliRun(context, context.reusableCliSession.sessionId);
       const effectiveCliSessionId = output.sessionId ?? context.reusableCliSession.sessionId;
+      await clearConsumedMissionNotifications(output.text?.trim());
       return buildCliRunResult({ output, effectiveCliSessionId });
     } catch (err) {
       if (err instanceof FailoverError) {
@@ -68,6 +77,7 @@ export async function runCliAgent(params: RunCliAgentParams): Promise<EmbeddedPi
           // For now, retry without the session ID to create a new session
           const output = await executePreparedCliRun(context, undefined);
           const effectiveCliSessionId = output.sessionId;
+          await clearConsumedMissionNotifications(output.text?.trim());
           return buildCliRunResult({ output, effectiveCliSessionId });
         }
         throw err;

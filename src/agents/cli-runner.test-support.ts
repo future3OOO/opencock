@@ -28,6 +28,15 @@ const hoisted = vi.hoisted(() => {
       bootstrapFiles: [],
       contextFiles: [],
     })),
+    resolveDirectSessionBootstrapContextMock: vi.fn(
+      async (): Promise<{
+        bootstrapFile?: WorkspaceBootstrapFile;
+        consumedPendingMissionIds: string[];
+      }> => ({
+        consumedPendingMissionIds: [],
+      }),
+    ),
+    syncClaudeProjectMemoryMock: vi.fn(async () => null),
   };
 });
 
@@ -46,6 +55,8 @@ setCliRunnerExecuteTestDeps({
 setCliRunnerPrepareTestDeps({
   makeBootstrapWarn: () => () => {},
   resolveBootstrapContextForRun: hoisted.resolveBootstrapContextForRunMock,
+  resolveDirectSessionBootstrapContext: hoisted.resolveDirectSessionBootstrapContextMock,
+  syncClaudeProjectMemory: hoisted.syncClaudeProjectMemoryMock,
 });
 
 type MockRunExit = {
@@ -141,6 +152,10 @@ export async function setupCliRunnerTestModule() {
     bootstrapFiles: [],
     contextFiles: [],
   });
+  hoisted.resolveDirectSessionBootstrapContextMock
+    .mockReset()
+    .mockResolvedValue({ consumedPendingMissionIds: [] });
+  hoisted.syncClaudeProjectMemoryMock.mockReset().mockResolvedValue(null);
   return (await import("./cli-runner.js")).runCliAgent;
 }
 
@@ -158,6 +173,13 @@ export function stubBootstrapContext(params: {
   contextFiles: EmbeddedContextFile[];
 }) {
   hoisted.resolveBootstrapContextForRunMock.mockResolvedValueOnce(params);
+}
+
+export function stubDirectSessionBootstrapContext(params: {
+  bootstrapFile?: WorkspaceBootstrapFile;
+  consumedPendingMissionIds: string[];
+}) {
+  hoisted.resolveDirectSessionBootstrapContextMock.mockResolvedValueOnce(params);
 }
 
 export async function runCliAgentWithBackendConfig(params: {

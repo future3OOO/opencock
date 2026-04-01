@@ -55,6 +55,7 @@ export type PreparedCliRunContext = {
   systemPrompt: string;
   systemPromptReport: SessionSystemPromptReport;
   bootstrapPromptWarningLines: string[];
+  consumedPendingMissionIds: string[];
   heartbeatPrompt?: string;
   extraSystemPromptHash?: string;
 };
