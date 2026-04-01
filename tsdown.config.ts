@@ -118,6 +118,12 @@ function buildCoreDistEntries(): Record<string, string> {
     entry: "src/entry.ts",
     // Ensure this module is bundled as an entry so legacy CLI shims can resolve its exports.
     "cli/daemon-cli": "src/cli/daemon-cli.ts",
+    // Keep long-lived lazy CLI/runtime boundaries on stable filenames so
+    // rebuilt dist trees do not leave the launcher graph pointing at stale
+    // hashed siblings from an older install snapshot.
+    "gateway-cli": "src/cli/gateway-cli.ts",
+    health: "src/commands/health.ts",
+    "run-main": "src/cli/run-main.ts",
     // Keep long-lived lazy runtime boundaries on stable filenames so rebuilt
     // dist/ trees do not strand already-running gateways on stale hashed chunks.
     "agents/auth-profiles.runtime": "src/agents/auth-profiles.runtime.ts",
