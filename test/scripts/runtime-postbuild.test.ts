@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   copyStaticExtensionAssets,
+  runRuntimePostBuild,
   writeStableRootRuntimeAliases,
 } from "../../scripts/runtime-postbuild.mjs";
 
@@ -83,5 +84,52 @@ describe("runtime postbuild static assets", () => {
       'export * from "./runtime-tts.runtime-AbCd1234.js";\n',
     );
     await expect(fs.stat(path.join(distDir, "library.js"))).rejects.toThrow();
+  });
+
+  it("writes and prunes the runtime entrypoint manifest during postbuild", async () => {
+    const rootDir = await createTempRoot();
+    const distDir = path.join(rootDir, "dist");
+    await fs.mkdir(distDir, { recursive: true });
+    await fs.writeFile(path.join(distDir, "health.js"), 'export * from "./health-AbCd1234.js";\n');
+    await fs.writeFile(path.join(distDir, "health-AbCd1234.js"), "export const health = true;\n");
+    await fs.writeFile(path.join(distDir, "health-Old11111.js"), "export const old = true;\n");
+    await fs.writeFile(
+      path.join(distDir, "reply.runtime.js"),
+      'export * from "./reply.runtime-ZxY987.js";\n',
+    );
+    await fs.writeFile(
+      path.join(distDir, "reply.runtime-ZxY987.js"),
+      "export const reply = true;\n",
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(distDir, "reply.runtime-Legacy000.js"),
+      "export const legacy = true;\n",
+    );
+    await fs.writeFile(
+      path.join(distDir, "compact.runtime.js"),
+      'export * from "./compact.runtime-QwErTy12.js";\n',
+    );
+    await fs.writeFile(
+      path.join(distDir, "compact.runtime-QwErTy12.js"),
+      "export const compact = true;\n",
+    );
+
+    runRuntimePostBuild({ rootDir, assets: [] });
+
+    const manifest = JSON.parse(
+      await fs.readFile(path.join(distDir, "runtime-entrypoints.json"), "utf8"),
+    ) as {
+      aliases: Record<string, { targetFile: string }>;
+      pruned: Array<{ aliasFile: string; removed: string[] }>;
+    };
+
+    expect(manifest.aliases["health.js"].targetFile).toBe("health-AbCd1234.js");
+    expect(manifest.pruned).toEqual([
+      { aliasFile: "health.js", removed: ["health-Old11111.js"] },
+      { aliasFile: "reply.runtime.js", removed: ["reply.runtime-Legacy000.js"] },
+      { aliasFile: "compact.runtime.js", removed: [] },
+    ]);
+    await expect(fs.stat(path.join(distDir, "health-Old11111.js"))).rejects.toThrow();
   });
 });

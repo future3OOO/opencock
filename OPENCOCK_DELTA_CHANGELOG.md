@@ -49,9 +49,9 @@ git diff --stat upstream/main...HEAD
 
 ### 2026-04-01
 
-#### Source-owned inbound transcript persistence and stable runtime entrypoint guardrails
+#### Source-owned inbound transcript persistence and runtime build-artifact hygiene
 
-Promoted inbound/user transcript persistence into maintained OpenCock source and added build-time guardrails for the long-lived lazy runtime entrypoints that used to drift into hashed-sibling confusion.
+Promoted inbound/user transcript persistence into maintained OpenCock source and hardened the build so long-lived lazy runtime entrypoints no longer accumulate stale hashed siblings between rebuilds.
 
 - Added source-owned inbound transcript append helpers in:
   - `src/config/sessions/transcript.ts`
@@ -67,6 +67,14 @@ Promoted inbound/user transcript persistence into maintained OpenCock source and
   - `package.json`
   - `scripts/check-stable-runtime-entrypoints.mjs`
   - `test/scripts/check-stable-runtime-entrypoints.test.ts`
+- Added runtime-entrypoint manifest/prune flow in:
+  - `scripts/runtime-entrypoint-manifest.mjs`
+  - `scripts/runtime-postbuild.mjs`
+  - `test/scripts/runtime-entrypoint-manifest.test.ts`
+  - `test/scripts/runtime-postbuild.test.ts`
+- Hardened standard source builds to start from a clean runtime output tree in:
+  - `scripts/tsdown-build.mjs`
+  - `test/scripts/tsdown-build.test.ts`
 
 Behavior change:
 
@@ -74,6 +82,8 @@ Behavior change:
 - `chat.send` user turns now append through the same source-owned transcript path, including persisted media metadata and idempotent duplicate suppression
 - transcript user-turn persistence can target already-resolved `sessionId/sessionFile` pairs directly, so runtime callers do not silently fall back when `sessions.json` lookup is unavailable or stale
 - the build now emits and enforces stable `gateway-cli.js`, `health.js`, and `run-main.js` entrypoints so rebuilt runtime graphs stop stranding lazy imports on stale hashed siblings
+- runtime postbuild now writes `dist/runtime-entrypoints.json` and prunes stale hashed siblings for the stable `health`, `reply.runtime`, and `compact.runtime` families
+- standard `pnpm build` now starts from a clean `dist/` / `dist-runtime/` tree unless `--no-clean` is explicitly requested, which prevents stale runtime chunk families from surviving ordinary rebuilds
 
 Why this fork-only:
 
